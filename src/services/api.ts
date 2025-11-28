@@ -14,6 +14,12 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
+// ==============================================
+// TEMPORARY DEV BYPASS - MUST MATCH AuthContext
+// ==============================================
+const BYPASS_MODE = true;
+// END BYPASS CONFIG ===========================
+
 // Export for use in upload functions
 export { API_BASE_URL };
 
@@ -106,8 +112,8 @@ async function apiFetch<T>(
 
     // Handle different status codes
     if (!response.ok) {
-      if (response.status === 401) {
-        // Unauthorized - trigger sign out if handler is set
+      if (response.status === 401 && !BYPASS_MODE) {
+        // Unauthorized - trigger sign out if handler is set (disabled in bypass mode)
         if (handle401Fn) {
           console.warn('[API] 401 received, triggering sign out');
           await handle401Fn();

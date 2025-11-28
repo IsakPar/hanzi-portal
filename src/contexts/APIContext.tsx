@@ -10,6 +10,12 @@ import { setTokenProvider, set401Handler } from '@/services/api';
  * so we rely on credentials: 'include' for API calls
  */
 
+// ==============================================
+// TEMPORARY DEV BYPASS - MUST MATCH AuthContext
+// ==============================================
+const BYPASS_MODE = true;
+// END BYPASS CONFIG ===========================
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
 // API Response wrapper type
@@ -57,8 +63,12 @@ const APIContext = createContext<APIClient | null>(null);
 export function APIProvider({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
 
-  // Handle 401 errors by signing out and redirecting
+  // Handle 401 errors by signing out and redirecting (disabled in bypass mode)
   const handleUnauthorized = useCallback(async () => {
+    if (BYPASS_MODE) {
+      console.warn('[API] 401 received but BYPASS_MODE is enabled - ignoring');
+      return;
+    }
     console.warn('[API] Unauthorized - signing out and redirecting to login');
     await signOut();
     window.location.href = '/login';
@@ -68,7 +78,10 @@ export function APIProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Better Auth uses cookies, so no token provider needed
     setTokenProvider(async () => null);
-    set401Handler(handleUnauthorized);
+    // Only set 401 handler if not in bypass mode
+    if (!BYPASS_MODE) {
+      set401Handler(handleUnauthorized);
+    }
   }, [handleUnauthorized]);
 
   /**
@@ -94,8 +107,8 @@ export function APIProvider({ children }: { children: ReactNode }) {
 
       // Handle different status codes
       if (!response.ok) {
-        if (response.status === 401) {
-          // Unauthorized - force sign out
+        if (response.status === 401 && !BYPASS_MODE) {
+          // Unauthorized - force sign out (disabled in bypass mode)
           await handleUnauthorized();
           throw new APIError('Session expired - please sign in again', 401);
         }

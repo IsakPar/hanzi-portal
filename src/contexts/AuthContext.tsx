@@ -7,7 +7,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import { authClient, useSession } from '@/lib/auth-client';
+import { authClient } from '@/lib/auth-client';
 import { useIdleTimeout } from '@/hooks/useIdleTimeout';
 import { IdleWarningModal } from '@/components/IdleWarningModal';
 
@@ -31,33 +31,35 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// ==============================================
+// TEMPORARY DEV BYPASS - REMOVE BEFORE PRODUCTION
+// ==============================================
+const BYPASS_MODE = true;
+// END BYPASS CONFIG ===========================
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { data: session, isPending, error, refetch } = useSession();
   const [showIdleWarning, setShowIdleWarning] = useState(false);
 
-  // ==============================================
-  // TEMPORARY DEV BYPASS - REMOVE BEFORE PRODUCTION
-  // ==============================================
-  const user: AuthUser = {
+  // In bypass mode, skip all auth calls
+  const user: AuthUser = BYPASS_MODE ? {
     id: 'dev-bypass-admin',
     email: 'isak@polymasterlabs.com',
     name: 'Isak Parild',
     role: 'admin',
     tier: 'pro',
-  };
-  const isAuthenticated = true;
-  const bypassMode = true;
-  // END TEMPORARY BYPASS ======================
-
-  // Real auth values (unused in bypass mode)
-  void session; void error;
+  } : null as unknown as AuthUser;
+  
+  const isAuthenticated = BYPASS_MODE ? true : false;
+  const isPending = false;
 
   const handleSignOut = useCallback(async () => {
-    await authClient.signOut();
+    if (!BYPASS_MODE) {
+      await authClient.signOut();
+    }
     window.location.href = '/login';
   }, []);
 
-  // Idle timeout - 10 minutes of inactivity
+  // Idle timeout - 10 minutes of inactivity (disabled in bypass mode)
   const { isWarning, remainingTime, resetTimer } = useIdleTimeout({
     onIdle: () => {
       handleSignOut();
@@ -65,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onWarning: () => {
       setShowIdleWarning(true);
     },
-    enabled: isAuthenticated, // Only track when logged in
+    enabled: !BYPASS_MODE && isAuthenticated, // Disabled in bypass mode
   });
 
   const handleContinueWorking = useCallback(() => {
@@ -74,6 +76,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [resetTimer]);
 
   const handleSignIn = async (email: string, password: string) => {
+    if (BYPASS_MODE) {
+      return { success: true };
+    }
+    
     try {
       const result = await authClient.signIn.email({
         email,
@@ -91,14 +97,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const handleRefreshSession = async () => {
-    await refetch();
+    // No-op in bypass mode
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        isLoading: bypassMode ? false : isPending, // Bypass: never loading
+        isLoading: isPending,
         isAuthenticated,
         signIn: handleSignIn,
         signOut: handleSignOut,
