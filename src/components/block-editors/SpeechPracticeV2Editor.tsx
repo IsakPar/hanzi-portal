@@ -161,8 +161,6 @@ export function SpeechPracticeV2Editor({ block, onChange, lessonId }: SpeechPrac
           blockId={block.id}
           onSaved={handleAudioSaved}
           onDeleted={handleAudioDeleted}
-          disabled={!lessonId}
-          disabledMessage="Save the lesson first to generate audio"
         />
       </div>
 
