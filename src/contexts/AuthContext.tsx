@@ -3,9 +3,6 @@
  * Uses Better Auth for authentication state management
  * Includes 10-minute inactivity timeout for security
  * 
- * For local dev with prod backend: Set VITE_DEV_JWT_TOKEN in .env.local
- * This provides a hardcoded dev user without making auth API calls
- * 
  * @see https://www.better-auth.com
  */
 
@@ -34,38 +31,29 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// ==============================================
-// DEV TOKEN MODE - Set VITE_DEV_JWT_TOKEN in .env.local
-// When set, uses hardcoded dev user without auth API calls
-// Generate token: JWT_SECRET=xxx node scripts/mint-jwt.mjs --sub dev-admin --role admin --expires 30d
-// ==============================================
-const DEV_JWT_TOKEN = import.meta.env.VITE_DEV_JWT_TOKEN || '';
-const USE_DEV_TOKEN = !!DEV_JWT_TOKEN;
-
-const DEV_USER: AuthUser = {
-  id: 'dev-admin',
-  email: 'dev@hanzimaster.local',
-  name: 'Dev Admin',
-  role: 'admin',
-  tier: 'pro',
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [showIdleWarning, setShowIdleWarning] = useState(false);
 
-  // If dev token is set, use hardcoded dev user
-  const user: AuthUser | null = USE_DEV_TOKEN ? DEV_USER : null;
-  const isAuthenticated = USE_DEV_TOKEN ? true : false;
-  const isPending = false;
+  // Use Better Auth's useSession hook
+  const { data: session, isPending, refetch } = authClient.useSession();
+  
+  const user = session?.user ? {
+    id: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
+    role: (session.user as any).role || 'user',
+    tier: (session.user as any).tier || 'free',
+    image: session.user.image || undefined,
+  } : null;
+  
+  const isAuthenticated = !!session?.user;
 
   const handleSignOut = useCallback(async () => {
-    if (!USE_DEV_TOKEN) {
-      await authClient.signOut();
-    }
+    await authClient.signOut();
     window.location.href = '/login';
   }, []);
 
-  // Idle timeout - 10 minutes of inactivity (disabled when using dev token)
+  // Idle timeout - 10 minutes of inactivity
   const { isWarning, remainingTime, resetTimer } = useIdleTimeout({
     onIdle: () => {
       handleSignOut();
@@ -73,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onWarning: () => {
       setShowIdleWarning(true);
     },
-    enabled: !USE_DEV_TOKEN && isAuthenticated,
+    enabled: isAuthenticated,
   });
 
   const handleContinueWorking = useCallback(() => {
@@ -82,10 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [resetTimer]);
 
   const handleSignIn = async (email: string, password: string) => {
-    if (USE_DEV_TOKEN) {
-      return { success: true };
-    }
-    
     try {
       const result = await authClient.signIn.email({
         email,
@@ -96,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: result.error.message };
       }
       
+      // Refresh session after sign in
+      await refetch();
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
@@ -103,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const handleRefreshSession = async () => {
-    // No-op when using dev token
+    await refetch();
   };
 
   return (

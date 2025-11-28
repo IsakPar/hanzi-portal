@@ -1,27 +1,16 @@
 /**
- * 🔌 API Client Service (Clerk-aware singleton)
+ * 🔌 API Client Service (Better Auth aware singleton)
  * 
- * This exports a singleton `api` object that works with Clerk authentication.
+ * This exports a singleton `api` object that works with Better Auth cookies.
  * All service files can continue using `import { api } from './api'`.
  * 
- * The token is fetched dynamically on each request.
- * 
  * Features:
- * - Automatic Clerk token injection
+ * - Automatic cookie-based authentication via credentials: 'include'
  * - AbortController support for request cancellation
  * - Upload progress tracking via XMLHttpRequest
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-
-// ==============================================
-// DEV TOKEN AUTH - For local development against prod backend
-// ==============================================
-// Set VITE_DEV_JWT_TOKEN in .env.local with a valid JWT token
-// Generate with: JWT_SECRET=xxx node scripts/mint-jwt.mjs --sub dev-admin --role admin --expires 30d
-const DEV_JWT_TOKEN = import.meta.env.VITE_DEV_JWT_TOKEN || '';
-const USE_DEV_TOKEN = !!DEV_JWT_TOKEN;
-// ==============================================
 
 // Export for use in upload functions
 export { API_BASE_URL };
@@ -65,50 +54,33 @@ export function set401Handler(fn: () => Promise<void>) {
 }
 
 /**
- * Token provider function - set by APIContext
- * This allows the singleton api object to fetch Clerk tokens
+ * Token provider function - kept for backwards compatibility but not used
+ * Better Auth uses cookies, so no tokens needed
  */
 let getTokenFn: (() => Promise<string | null>) | null = null;
 
-/**
- * Set the token provider (called by APIContext on mount)
- */
 export function setTokenProvider(fn: () => Promise<string | null>) {
   getTokenFn = fn;
 }
 
 /**
- * Get the current token (exported for XMLHttpRequest uploads)
- * In dev mode with VITE_DEV_JWT_TOKEN set, returns the dev token
+ * Get the current token - kept for upload functions that need it
  */
 export async function getAuthToken(): Promise<string | null> {
-  // If dev token is configured, always use it
-  if (USE_DEV_TOKEN) {
-    return DEV_JWT_TOKEN;
-  }
   return getTokenFn ? await getTokenFn() : null;
 }
 
 /**
- * Base fetch wrapper with JWT authentication
- * Supports both dev token (VITE_DEV_JWT_TOKEN) and runtime token provider
+ * Base fetch wrapper with Better Auth cookie authentication
  */
 async function apiFetch<T>(
   endpoint: string,
   options: APIRequestOptions = {}
 ): Promise<T> {
-  // Get token - dev token takes priority, then runtime provider
-  const token = await getAuthToken();
-
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
-
-  // Add auth header if token exists
-  if (token) {
-    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-  }
 
   const url = `${API_BASE_URL}${endpoint}`;
 
@@ -116,14 +88,14 @@ async function apiFetch<T>(
     const response = await fetch(url, {
       ...options,
       headers,
+      credentials: 'include', // Send cookies with request
       signal: options.signal,
     });
 
     // Handle different status codes
     if (!response.ok) {
       if (response.status === 401) {
-        // Don't trigger sign out if using dev token - it might just be expired
-        if (!USE_DEV_TOKEN && handle401Fn) {
+        if (handle401Fn) {
           console.warn('[API] 401 received, triggering sign out');
           await handle401Fn();
         }
@@ -198,8 +170,6 @@ export const api = {
 
   // Upload file (multipart/form-data) - basic version without progress
   upload: async <T,>(endpoint: string, file: File, metadata?: Record<string, string>): Promise<T> => {
-    const token = await getAuthToken();
-    
     const formData = new FormData();
     formData.append('file', file);
     
@@ -210,15 +180,10 @@ export const api = {
       });
     }
 
-    const headers: HeadersInit = {};
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
-      headers,
       body: formData,
+      credentials: 'include', // Send cookies with request
     });
 
     if (!response.ok) {
