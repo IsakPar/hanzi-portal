@@ -3,6 +3,9 @@
  * Uses Better Auth for authentication state management
  * Includes 10-minute inactivity timeout for security
  * 
+ * For local dev with prod backend: Set VITE_DEV_JWT_TOKEN in .env.local
+ * This provides a hardcoded dev user without making auth API calls
+ * 
  * @see https://www.better-auth.com
  */
 
@@ -32,34 +35,37 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 // ==============================================
-// TEMPORARY DEV BYPASS - REMOVE BEFORE PRODUCTION
+// DEV TOKEN MODE - Set VITE_DEV_JWT_TOKEN in .env.local
+// When set, uses hardcoded dev user without auth API calls
+// Generate token: JWT_SECRET=xxx node scripts/mint-jwt.mjs --sub dev-admin --role admin --expires 30d
 // ==============================================
-const BYPASS_MODE = true;
-// END BYPASS CONFIG ===========================
+const DEV_JWT_TOKEN = import.meta.env.VITE_DEV_JWT_TOKEN || '';
+const USE_DEV_TOKEN = !!DEV_JWT_TOKEN;
+
+const DEV_USER: AuthUser = {
+  id: 'dev-admin',
+  email: 'dev@hanzimaster.local',
+  name: 'Dev Admin',
+  role: 'admin',
+  tier: 'pro',
+};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [showIdleWarning, setShowIdleWarning] = useState(false);
 
-  // In bypass mode, skip all auth calls
-  const user: AuthUser = BYPASS_MODE ? {
-    id: 'dev-bypass-admin',
-    email: 'isak@polymasterlabs.com',
-    name: 'Isak Parild',
-    role: 'admin',
-    tier: 'pro',
-  } : null as unknown as AuthUser;
-  
-  const isAuthenticated = BYPASS_MODE ? true : false;
+  // If dev token is set, use hardcoded dev user
+  const user: AuthUser | null = USE_DEV_TOKEN ? DEV_USER : null;
+  const isAuthenticated = USE_DEV_TOKEN ? true : false;
   const isPending = false;
 
   const handleSignOut = useCallback(async () => {
-    if (!BYPASS_MODE) {
+    if (!USE_DEV_TOKEN) {
       await authClient.signOut();
     }
     window.location.href = '/login';
   }, []);
 
-  // Idle timeout - 10 minutes of inactivity (disabled in bypass mode)
+  // Idle timeout - 10 minutes of inactivity (disabled when using dev token)
   const { isWarning, remainingTime, resetTimer } = useIdleTimeout({
     onIdle: () => {
       handleSignOut();
@@ -67,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onWarning: () => {
       setShowIdleWarning(true);
     },
-    enabled: !BYPASS_MODE && isAuthenticated, // Disabled in bypass mode
+    enabled: !USE_DEV_TOKEN && isAuthenticated,
   });
 
   const handleContinueWorking = useCallback(() => {
@@ -76,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [resetTimer]);
 
   const handleSignIn = async (email: string, password: string) => {
-    if (BYPASS_MODE) {
+    if (USE_DEV_TOKEN) {
       return { success: true };
     }
     
@@ -97,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const handleRefreshSession = async () => {
-    // No-op in bypass mode
+    // No-op when using dev token
   };
 
   return (

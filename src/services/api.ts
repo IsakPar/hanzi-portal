@@ -15,10 +15,13 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
 // ==============================================
-// TEMPORARY DEV BYPASS - MUST MATCH AuthContext
+// DEV TOKEN AUTH - For local development against prod backend
 // ==============================================
-const BYPASS_MODE = true;
-// END BYPASS CONFIG ===========================
+// Set VITE_DEV_JWT_TOKEN in .env.local with a valid JWT token
+// Generate with: JWT_SECRET=xxx node scripts/mint-jwt.mjs --sub dev-admin --role admin --expires 30d
+const DEV_JWT_TOKEN = import.meta.env.VITE_DEV_JWT_TOKEN || '';
+const USE_DEV_TOKEN = !!DEV_JWT_TOKEN;
+// ==============================================
 
 // Export for use in upload functions
 export { API_BASE_URL };
@@ -76,20 +79,26 @@ export function setTokenProvider(fn: () => Promise<string | null>) {
 
 /**
  * Get the current token (exported for XMLHttpRequest uploads)
+ * In dev mode with VITE_DEV_JWT_TOKEN set, returns the dev token
  */
 export async function getAuthToken(): Promise<string | null> {
+  // If dev token is configured, always use it
+  if (USE_DEV_TOKEN) {
+    return DEV_JWT_TOKEN;
+  }
   return getTokenFn ? await getTokenFn() : null;
 }
 
 /**
- * Base fetch wrapper with Clerk authentication
+ * Base fetch wrapper with JWT authentication
+ * Supports both dev token (VITE_DEV_JWT_TOKEN) and runtime token provider
  */
 async function apiFetch<T>(
   endpoint: string,
   options: APIRequestOptions = {}
 ): Promise<T> {
-  // Get Clerk token if provider is set
-  const token = getTokenFn ? await getTokenFn() : null;
+  // Get token - dev token takes priority, then runtime provider
+  const token = await getAuthToken();
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -112,9 +121,9 @@ async function apiFetch<T>(
 
     // Handle different status codes
     if (!response.ok) {
-      if (response.status === 401 && !BYPASS_MODE) {
-        // Unauthorized - trigger sign out if handler is set (disabled in bypass mode)
-        if (handle401Fn) {
+      if (response.status === 401) {
+        // Don't trigger sign out if using dev token - it might just be expired
+        if (!USE_DEV_TOKEN && handle401Fn) {
           console.warn('[API] 401 received, triggering sign out');
           await handle401Fn();
         }
@@ -189,7 +198,7 @@ export const api = {
 
   // Upload file (multipart/form-data) - basic version without progress
   upload: async <T,>(endpoint: string, file: File, metadata?: Record<string, string>): Promise<T> => {
-    const token = getTokenFn ? await getTokenFn() : null;
+    const token = await getAuthToken();
     
     const formData = new FormData();
     formData.append('file', file);

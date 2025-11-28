@@ -6,15 +6,13 @@ import { setTokenProvider, set401Handler } from '@/services/api';
  * 🔌 API Context
  * Provides authenticated API client throughout the app
  * 
- * Note: Better Auth uses httpOnly cookies for authentication,
- * so we rely on credentials: 'include' for API calls
+ * For dev with prod backend: Set VITE_DEV_JWT_TOKEN in .env.local
+ * This allows local portal to authenticate with the production backend
  */
 
-// ==============================================
-// TEMPORARY DEV BYPASS - MUST MATCH AuthContext
-// ==============================================
-const BYPASS_MODE = true;
-// END BYPASS CONFIG ===========================
+// Dev token for local development against prod backend
+const DEV_JWT_TOKEN = import.meta.env.VITE_DEV_JWT_TOKEN || '';
+const USE_DEV_TOKEN = !!DEV_JWT_TOKEN;
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -63,10 +61,11 @@ const APIContext = createContext<APIClient | null>(null);
 export function APIProvider({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
 
-  // Handle 401 errors by signing out and redirecting (disabled in bypass mode)
+  // Handle 401 errors by signing out and redirecting
   const handleUnauthorized = useCallback(async () => {
-    if (BYPASS_MODE) {
-      console.warn('[API] 401 received but BYPASS_MODE is enabled - ignoring');
+    // Don't trigger sign out if using dev token - it might just be expired
+    if (USE_DEV_TOKEN) {
+      console.warn('[API] 401 received with dev token - token may be expired');
       return;
     }
     console.warn('[API] Unauthorized - signing out and redirecting to login');
@@ -76,16 +75,14 @@ export function APIProvider({ children }: { children: ReactNode }) {
 
   // Set up global handlers
   useEffect(() => {
-    // Better Auth uses cookies, so no token provider needed
-    setTokenProvider(async () => null);
-    // Only set 401 handler if not in bypass mode
-    if (!BYPASS_MODE) {
-      set401Handler(handleUnauthorized);
-    }
+    // If using dev token, provide it. Otherwise null (Better Auth uses cookies)
+    setTokenProvider(async () => USE_DEV_TOKEN ? DEV_JWT_TOKEN : null);
+    set401Handler(handleUnauthorized);
   }, [handleUnauthorized]);
 
   /**
-   * Base fetch wrapper with Better Auth cookie authentication
+   * Base fetch wrapper with JWT authentication
+   * Uses dev token if VITE_DEV_JWT_TOKEN is set, otherwise relies on cookies
    */
   const apiFetch = async <T,>(
     endpoint: string,
@@ -96,19 +93,24 @@ export function APIProvider({ children }: { children: ReactNode }) {
       ...options.headers,
     };
 
+    // Add Authorization header if using dev token
+    if (USE_DEV_TOKEN) {
+      (headers as Record<string, string>)['Authorization'] = `Bearer ${DEV_JWT_TOKEN}`;
+    }
+
     const url = `${API_BASE_URL}${endpoint}`;
 
     try {
       const response = await fetch(url, {
         ...options,
         headers,
-        credentials: 'include', // Send cookies with request
+        credentials: USE_DEV_TOKEN ? 'omit' : 'include', // Only send cookies if not using dev token
       });
 
       // Handle different status codes
       if (!response.ok) {
-        if (response.status === 401 && !BYPASS_MODE) {
-          // Unauthorized - force sign out (disabled in bypass mode)
+        if (response.status === 401 && !USE_DEV_TOKEN) {
+          // Unauthorized - force sign out (don't sign out if dev token expired)
           await handleUnauthorized();
           throw new APIError('Session expired - please sign in again', 401);
         }
@@ -155,10 +157,16 @@ export function APIProvider({ children }: { children: ReactNode }) {
       });
     }
 
+    const headers: HeadersInit = {};
+    if (USE_DEV_TOKEN) {
+      headers['Authorization'] = `Bearer ${DEV_JWT_TOKEN}`;
+    }
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
       body: formData,
-      credentials: 'include', // Send cookies with request
+      headers,
+      credentials: USE_DEV_TOKEN ? 'omit' : 'include',
     });
 
     if (!response.ok) {
