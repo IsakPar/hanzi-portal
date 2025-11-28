@@ -1,0 +1,142 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Suspense, lazy } from "react";
+import { Loader2 } from "lucide-react";
+import { APIProvider } from "./contexts/APIContext";
+import { AIAssistantProvider } from "./contexts/AIAssistantContext";
+import { AuthGuard, AdminGuard, GuestGuard, useAuth } from "./contexts/AuthContext";
+import { Layout } from "./components/layout/Layout";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+
+// Auth pages
+import { LoginPage } from "./pages/auth/LoginPage";
+import { ForgotPasswordPage } from "./pages/auth/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
+import { SignupPage } from "./pages/auth/SignupPage"; // TODO: Delete after admin setup
+
+// Lazy load pages for better initial bundle size
+// Critical path pages (loaded eagerly for fast navigation)
+import { Dashboard } from "./pages/Dashboard";
+
+// Heavy editors (lazy loaded - they include many sub-components)
+const LessonEditor = lazy(() => import("./pages/LessonEditor").then(m => ({ default: m.LessonEditor })));
+const StoryEditor = lazy(() => import("./pages/StoryEditor").then(m => ({ default: m.StoryEditor })));
+const VocabularyEditor = lazy(() => import("./pages/VocabularyEditor").then(m => ({ default: m.VocabularyEditor })));
+const PromptEditor = lazy(() => import("./pages/PromptEditor").then(m => ({ default: m.PromptEditor })));
+const PipelineEditor = lazy(() => import("./pages/PipelineEditor").then(m => ({ default: m.PipelineEditor })));
+
+// List pages (lazy loaded - moderate complexity)
+const LessonList = lazy(() => import("./pages/LessonList").then(m => ({ default: m.LessonList })));
+const StoriesList = lazy(() => import("./pages/StoriesList").then(m => ({ default: m.StoriesList })));
+const PromptsList = lazy(() => import("./pages/PromptsList").then(m => ({ default: m.PromptsList })));
+const VocabularyList = lazy(() => import("./pages/VocabularyList").then(m => ({ default: m.VocabularyList })));
+const VocabularyImport = lazy(() => import("./pages/VocabularyImport").then(m => ({ default: m.VocabularyImport })));
+
+// Secondary pages (lazy loaded - less frequently accessed)
+const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard").then(m => ({ default: m.AnalyticsDashboard })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
+const ContentExportPage = lazy(() => import("./pages/ContentExportPage").then(m => ({ default: m.ContentExportPage })));
+const WaitlistPage = lazy(() => import("./pages/WaitlistPage").then(m => ({ default: m.WaitlistPage })));
+const WebhookDebugPage = lazy(() => import("./pages/WebhookDebugPage").then(m => ({ default: m.WebhookDebugPage })));
+const LessonCacheManager = lazy(() => import("./pages/LessonCacheManager"));
+const UserManagement = lazy(() => import("./pages/UserManagement").then(m => ({ default: m.UserManagement })));
+
+/**
+ * Page loading fallback component
+ */
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        <span className="text-sm text-slate-500">Loading...</span>
+      </div>
+    </div>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center space-y-6">
+        <div className="w-20 h-20 rounded-xl bg-slate-900 flex items-center justify-center shadow-lg mx-auto">
+          <span className="text-white font-bold text-3xl">汉</span>
+        </div>
+        <div>
+          <div className="text-2xl font-bold text-gray-900 mb-2">
+            HanziMaster Portal
+          </div>
+          <div className="text-sm text-gray-500">Loading your workspace...</div>
+        </div>
+        <div className="flex gap-2 justify-center">
+          <div className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+          <div className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+          <div className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AppContent() {
+  const { isLoading } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  return (
+    <APIProvider>
+      <AIAssistantProvider>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+          {/* Public auth routes */}
+          <Route path="/login" element={<GuestGuard><LoginPage /></GuestGuard>} />
+          <Route path="/forgot-password" element={<GuestGuard><ForgotPasswordPage /></GuestGuard>} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {/* TODO: Delete this route after creating admin account */}
+          <Route path="/setup" element={<GuestGuard><SignupPage /></GuestGuard>} />
+
+          {/* Protected routes with Layout */}
+          <Route path="/" element={<AuthGuard><Layout /></AuthGuard>} errorElement={<ErrorBoundary />}>
+            <Route index element={<Dashboard />} />
+            <Route path="waitlist" element={<AdminGuard><Suspense fallback={<PageLoader />}><WaitlistPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
+            <Route path="lessons" element={<Suspense fallback={<PageLoader />}><LessonList /></Suspense>} />
+            <Route path="stories" element={<Suspense fallback={<PageLoader />}><StoriesList /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="prompts" element={<Suspense fallback={<PageLoader />}><PromptsList /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="prompts/:slug" element={<Suspense fallback={<PageLoader />}><PromptEditor /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="prompts/:slug/:versionParam" element={<Suspense fallback={<PageLoader />}><PromptEditor /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="prompts/:slug/pipeline" element={<Suspense fallback={<PageLoader />}><PipelineEditor /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="vocabulary" element={<Suspense fallback={<PageLoader />}><VocabularyList /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="vocabulary/import" element={<Suspense fallback={<PageLoader />}><VocabularyImport /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="vocabulary/new" element={<Suspense fallback={<PageLoader />}><VocabularyEditor /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="vocabulary/:id/edit" element={<Suspense fallback={<PageLoader />}><VocabularyEditor /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="analytics" element={<Suspense fallback={<PageLoader />}><AnalyticsDashboard /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="settings" element={<AdminGuard><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
+            <Route path="export" element={<AdminGuard><Suspense fallback={<PageLoader />}><ContentExportPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
+            <Route path="webhooks" element={<AdminGuard><Suspense fallback={<PageLoader />}><WebhookDebugPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
+            <Route path="lesson-cache" element={<Suspense fallback={<PageLoader />}><LessonCacheManager /></Suspense>} errorElement={<ErrorBoundary />} />
+            <Route path="users" element={<AdminGuard><Suspense fallback={<PageLoader />}><UserManagement /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
+          </Route>
+
+          {/* Standalone routes (Full screen editors) - PROTECTED */}
+          <Route path="lessons/:lessonId/edit" element={<AuthGuard><Suspense fallback={<PageLoader />}><LessonEditor /></Suspense></AuthGuard>} errorElement={<ErrorBoundary />} />
+          <Route path="stories/:id/edit" element={<AuthGuard><Suspense fallback={<PageLoader />}><StoryEditor /></Suspense></AuthGuard>} errorElement={<ErrorBoundary />} />
+
+          {/* Catch-all - redirect unknown routes to home */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </AIAssistantProvider>
+    </APIProvider>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  );
+}
+
+export default App;
