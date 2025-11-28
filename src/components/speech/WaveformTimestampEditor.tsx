@@ -118,7 +118,7 @@ export function WaveformTimestampEditor({
   }, [audioUrl]);
 
   // Update regions when segments change
-  const updateRegions = useCallback((segs: SpeechSegment[], dur: number) => {
+  const updateRegions = useCallback((segs: SpeechSegment[], _dur: number) => {
     if (!regionsRef.current || !wavesurferRef.current) return;
 
     // Clear existing regions
