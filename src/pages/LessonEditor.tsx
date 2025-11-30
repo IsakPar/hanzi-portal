@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Eye, Settings, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Save, Eye, Settings, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BlockLibrary } from "@/components/lesson-editor/BlockLibrary";
 import { LessonFlow } from "@/components/lesson-editor/LessonFlow";
@@ -292,6 +292,7 @@ export function LessonEditor() {
             Preview
           </Button>
           <Button
+            variant="outline"
             size="sm"
             onClick={handleSave}
             disabled={!isDirty && !isNewLesson || saving}
@@ -304,9 +305,26 @@ export function LessonEditor() {
             ) : (
               <>
                 <Save size={16} className="mr-2" />
-                {isNewLesson ? "Create Lesson" : isDirty ? "Save Changes" : "Saved"}
+                {isNewLesson ? "Create" : isDirty ? "Save" : "Saved"}
               </>
             )}
+          </Button>
+          <Button
+            size="sm"
+            onClick={async () => {
+              // Save first if dirty, then navigate to review
+              if (isDirty || isNewLesson) {
+                await handleSave();
+              }
+              if (lesson?.id) {
+                navigate(`/lessons/${lesson.id}/review`);
+              }
+            }}
+            disabled={!lesson?.id && !isNewLesson || saving}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            Continue
+            <ArrowRight size={16} className="ml-2" />
           </Button>
         </div>
       </div>

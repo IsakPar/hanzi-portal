@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Eye, EyeOff, AlertCircle, Shield } from 'lucide-react';
-import { authClient } from '@/lib/auth-client';
+import { API_BASE_URL } from '@/services/api';
 
 export function SignupPage() {
   const navigate = useNavigate();
@@ -26,14 +26,16 @@ export function SignupPage() {
     setIsLoading(true);
 
     try {
-      const result = await authClient.signUp.email({
-        email,
-        password,
-        name,
+      // Call Better Auth signup endpoint directly
+      const res = await fetch(`${API_BASE_URL}/v1/auth/sign-up/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name }),
       });
       
-      if (result.error) {
-        setError(result.error.message || 'Failed to create account');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.message || data.error || 'Failed to create account');
         setIsLoading(false);
         return;
       }

@@ -15,6 +15,9 @@ import {
   OverviewTab,
   UsersTab,
   ContentTab,
+  ExercisesTab,
+  StoriesTab,
+  AITutorTab,
   AITab,
   RevenueTab,
   PerformanceTab,
@@ -40,6 +43,12 @@ export function AnalyticsDashboard() {
         return <UsersTab {...props} />;
       case 'content':
         return <ContentTab {...props} />;
+      case 'exercises':
+        return <ExercisesTab {...props} />;
+      case 'stories':
+        return <StoriesTab {...props} />;
+      case 'ai-tutor':
+        return <AITutorTab {...props} />;
       case 'ai':
         return <AITab {...props} />;
       case 'revenue':

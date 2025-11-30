@@ -1,18 +1,21 @@
 /**
- * 🔌 API Client Service (Better Auth aware singleton)
+ * 🔌 API Client Service (Token-Based Authentication)
  * 
- * This exports a singleton `api` object that works with Better Auth cookies.
+ * This exports a singleton `api` object that uses JWT Bearer tokens.
  * All service files can continue using `import { api } from './api'`.
  * 
  * Features:
- * - Automatic cookie-based authentication via credentials: 'include'
+ * - JWT token authentication via Authorization header
+ * - Automatic token refresh on 401
  * - AbortController support for request cancellation
- * - Upload progress tracking via XMLHttpRequest
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+import { getAccessToken, refreshAccessToken } from '@/lib/authClient';
 
-// Export for use in upload functions
+// Direct API URL - no proxy needed with token auth
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.studio.polymasterlabs.com';
+
+// Export for use in other files
 export { API_BASE_URL };
 
 // API Response wrapper type
@@ -46,41 +49,76 @@ export class APIError extends Error {
   }
 }
 
-// 401 handler - set by APIContext
-let handle401Fn: (() => Promise<void>) | null = null;
+// 401 handler - set by AuthContext for logout/redirect
+let handle401Fn: (() => void) | null = null;
 
-export function set401Handler(fn: () => Promise<void>) {
+export function set401Handler(fn: () => void) {
   handle401Fn = fn;
 }
 
-/**
- * Token provider function - kept for backwards compatibility but not used
- * Better Auth uses cookies, so no tokens needed
- */
-let getTokenFn: (() => Promise<string | null>) | null = null;
+// Track if we're currently refreshing to prevent thundering herd
+let isRefreshing = false;
+let refreshPromise: Promise<boolean> | null = null;
 
-export function setTokenProvider(fn: () => Promise<string | null>) {
-  getTokenFn = fn;
+/**
+ * Ensure we have a valid access token, refreshing if necessary
+ */
+async function ensureValidToken(): Promise<string | null> {
+  const token = getAccessToken();
+  if (token) return token;
+  
+  // No token - maybe we can refresh?
+  if (isRefreshing && refreshPromise) {
+    await refreshPromise;
+    return getAccessToken();
+  }
+  
+  return null;
 }
 
 /**
- * Get the current token - kept for upload functions that need it
+ * Handle 401 - try to refresh, or logout
  */
-export async function getAuthToken(): Promise<string | null> {
-  return getTokenFn ? await getTokenFn() : null;
+async function handle401(): Promise<boolean> {
+  // Prevent multiple simultaneous refresh attempts (thundering herd)
+  if (isRefreshing) {
+    return refreshPromise!;
+  }
+  
+  isRefreshing = true;
+  refreshPromise = refreshAccessToken();
+  
+  try {
+    const success = await refreshPromise;
+    if (!success && handle401Fn) {
+      handle401Fn();
+    }
+    return success;
+  } finally {
+    isRefreshing = false;
+    refreshPromise = null;
+  }
 }
 
 /**
- * Base fetch wrapper with Better Auth cookie authentication
+ * Base fetch wrapper with JWT authentication
  */
 async function apiFetch<T>(
   endpoint: string,
-  options: APIRequestOptions = {}
+  options: APIRequestOptions = {},
+  isRetry = false
 ): Promise<T> {
+  const token = await ensureValidToken();
+  
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
+  
+  // Add Authorization header if we have a token
+  if (token) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  }
 
   const url = `${API_BASE_URL}${endpoint}`;
 
@@ -88,20 +126,21 @@ async function apiFetch<T>(
     const response = await fetch(url, {
       ...options,
       headers,
-      credentials: 'include', // Send cookies with request
       signal: options.signal,
     });
 
-    // Handle different status codes
-    if (!response.ok) {
-      if (response.status === 401) {
-        if (handle401Fn) {
-          console.warn('[API] 401 received, triggering sign out');
-          await handle401Fn();
-        }
-        throw new APIError('Session expired - please sign in again', 401);
+    // Handle 401 - try refresh once
+    if (response.status === 401 && !isRetry) {
+      const refreshed = await handle401();
+      if (refreshed) {
+        // Retry with new token
+        return apiFetch<T>(endpoint, options, true);
       }
+      throw new APIError('Session expired - please sign in again', 401);
+    }
 
+    // Handle other errors
+    if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new APIError(
         errorData.error || errorData.message || `Request failed with status ${response.status}`,
@@ -124,10 +163,8 @@ async function apiFetch<T>(
     }
 
     // Network error or other issues
-    throw new APIError(
-      error instanceof Error ? error.message : 'Network error',
-      0
-    );
+    const errorMessage = error instanceof Error ? error.message : 'Network error';
+    throw new APIError(errorMessage, 0);
   }
 }
 
@@ -168,8 +205,10 @@ export const api = {
   delete: <T,>(endpoint: string, signal?: AbortSignal): Promise<T> =>
     apiFetch<T>(endpoint, { method: 'DELETE', signal }),
 
-  // Upload file (multipart/form-data) - basic version without progress
+  // Upload file (multipart/form-data)
   upload: async <T,>(endpoint: string, file: File, metadata?: Record<string, string>): Promise<T> => {
+    const token = getAccessToken();
+    
     const formData = new FormData();
     formData.append('file', file);
     
@@ -180,10 +219,15 @@ export const api = {
       });
     }
 
+    const headers: HeadersInit = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
+      headers,
       body: formData,
-      credentials: 'include', // Send cookies with request
     });
 
     if (!response.ok) {

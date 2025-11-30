@@ -1,59 +1,53 @@
 /**
  * Auth API Service
- * Re-exports Better Auth client methods for backward compatibility
- * 
- * Note: Most auth is handled directly through the Better Auth client
- * This file provides some utility functions for token access
+ * Provides utility functions for token-based authentication
  */
 
-import { authClient } from '@/lib/auth-client';
+import { 
+  login, 
+  logout, 
+  getAccessToken, 
+  getStoredUser,
+  type AuthUser 
+} from '@/lib/authClient';
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  name: string | null;
-  role: 'admin' | 'user';
-  tier: 'free' | 'premium' | 'pro';
-}
+export type { AuthUser };
 
-// Storage helper for getting auth token (Better Auth uses cookies, but we may need token for some API calls)
+// Storage helper for getting auth token
 export const authStorage = {
-  // Better Auth handles cookies automatically, but we can get session for API calls
   getToken: (): string | null => {
-    // Better Auth uses httpOnly cookies by default
-    // For API calls, we rely on cookies being sent automatically
-    return null;
+    return getAccessToken();
   },
   clear: () => {
-    // Better Auth handles this via signOut
+    // Handled by logout
   },
 };
 
-// Re-export auth client methods
+// Re-export auth methods for backward compatibility
 export const authAPI = {
   signIn: async (email: string, password: string) => {
-    return authClient.signIn.email({ email, password });
+    const user = await login(email, password);
+    return { user };
   },
   signOut: async () => {
-    return authClient.signOut();
+    await logout();
   },
   getSession: async () => {
-    return authClient.getSession();
+    const user = getStoredUser();
+    return user ? { user } : null;
   },
   forgotPassword: async (_email: string) => {
-    // TODO: Set up email service for password reset
+    // TODO: Implement password reset via API
     // For now, admin can reset passwords via admin panel
     return { success: true };
   },
-  resetPassword: async (token: string, password: string) => {
-    return authClient.resetPassword({
-      newPassword: password,
-      token,
-    });
+  resetPassword: async (_token: string, _password: string) => {
+    // TODO: Implement password reset via API
+    return { success: true };
   },
 };
 
-// Admin user management types (these will use the admin plugin endpoints)
+// Admin user management types
 export interface CreateUserInput {
   email: string;
   name: string;

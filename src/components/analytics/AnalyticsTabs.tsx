@@ -6,10 +6,10 @@
  */
 
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Users, BookOpen, Cpu, DollarSign, Activity } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Cpu, DollarSign, Activity, Target, MessageCircle, BookMarked } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type AnalyticsTab = 'overview' | 'users' | 'content' | 'ai' | 'revenue' | 'performance';
+export type AnalyticsTab = 'overview' | 'users' | 'content' | 'exercises' | 'stories' | 'ai' | 'ai-tutor' | 'revenue' | 'performance';
 
 interface TabConfig {
   id: AnalyticsTab;
@@ -21,9 +21,9 @@ interface TabConfig {
 const TABS: TabConfig[] = [
   {
     id: 'overview',
-    label: 'Overview',
+    label: 'Executive',
     icon: LayoutDashboard,
-    description: 'Key metrics at a glance',
+    description: 'High-level business metrics & retention',
   },
   {
     id: 'users',
@@ -33,13 +33,31 @@ const TABS: TabConfig[] = [
   },
   {
     id: 'content',
-    label: 'Content',
+    label: 'Lessons',
     icon: BookOpen,
-    description: 'Lessons, stories & vocabulary',
+    description: 'Lesson analytics & completion rates',
+  },
+  {
+    id: 'stories',
+    label: 'Stories',
+    icon: BookMarked,
+    description: 'Reading depth & engagement',
+  },
+  {
+    id: 'exercises',
+    label: 'Exercises',
+    icon: Target,
+    description: 'Success rates by exercise type',
+  },
+  {
+    id: 'ai-tutor',
+    label: 'AI Tutor',
+    icon: MessageCircle,
+    description: 'Conversation sessions & topics',
   },
   {
     id: 'ai',
-    label: 'AI',
+    label: 'AI Costs',
     icon: Cpu,
     description: 'Model usage & costs',
   },
@@ -51,7 +69,7 @@ const TABS: TabConfig[] = [
   },
   {
     id: 'performance',
-    label: 'Performance',
+    label: 'System',
     icon: Activity,
     description: 'API & system health',
   },

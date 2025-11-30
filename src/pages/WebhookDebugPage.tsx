@@ -12,8 +12,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+import { API_BASE_URL } from '@/services/api';
 
 interface TestResult {
   success: boolean;

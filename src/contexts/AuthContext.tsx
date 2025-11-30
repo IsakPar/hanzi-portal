@@ -1,24 +1,22 @@
 /**
- * Auth Context
- * Uses Better Auth for authentication state management
- * Includes 10-minute inactivity timeout for security
+ * Auth Context (Token-Based)
  * 
- * @see https://www.better-auth.com
+ * Uses JWT tokens stored in localStorage for authentication.
+ * No cookies, no CORS issues, no Safari ITP drama.
  */
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import { authClient } from '@/lib/auth-client';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { 
+  login as authLogin, 
+  logout as authLogout, 
+  getStoredUser, 
+  hasTokens,
+  getCurrentUser,
+  type AuthUser 
+} from '@/lib/authClient';
+import { set401Handler } from '@/services/api';
 import { useIdleTimeout } from '@/hooks/useIdleTimeout';
 import { IdleWarningModal } from '@/components/IdleWarningModal';
-
-interface AuthUser {
-  id: string;
-  email: string;
-  name: string | null;
-  role?: string;
-  tier?: string;
-  image?: string;
-}
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -26,31 +24,68 @@ interface AuthContextType {
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
-  refreshSession: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [showIdleWarning, setShowIdleWarning] = useState(false);
 
-  // Use Better Auth's useSession hook
-  const { data: session, isPending, refetch } = authClient.useSession();
-  
-  const user = session?.user ? {
-    id: session.user.id,
-    email: session.user.email,
-    name: session.user.name,
-    role: (session.user as any).role || 'user',
-    tier: (session.user as any).tier || 'free',
-    image: session.user.image || undefined,
-  } : null;
-  
-  const isAuthenticated = !!session?.user;
+  const isAuthenticated = !!user;
 
+  // Handle sign out
   const handleSignOut = useCallback(async () => {
-    await authClient.signOut();
+    await authLogout();
+    setUser(null);
     window.location.href = '/login';
+  }, []);
+
+  // Register 401 handler with API client
+  useEffect(() => {
+    set401Handler(() => {
+      setUser(null);
+      window.location.href = '/login';
+    });
+  }, []);
+
+  // Initialize auth state from localStorage
+  useEffect(() => {
+    const initAuth = async () => {
+      setIsLoading(true);
+      
+      // Quick check - do we have tokens?
+      if (!hasTokens()) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Try to get stored user first (fast)
+      const storedUser = getStoredUser();
+      if (storedUser) {
+        setUser(storedUser);
+      }
+
+      // Validate with server in background
+      try {
+        const serverUser = await getCurrentUser();
+        if (serverUser) {
+          setUser(serverUser);
+        } else {
+          // Token invalid/expired and couldn't refresh
+          setUser(null);
+        }
+      } catch {
+        // Keep using stored user if server check fails
+        // (network error, etc.)
+      }
+      
+      setIsLoading(false);
+    };
+
+    initAuth();
   }, []);
 
   // Idle timeout - 10 minutes of inactivity
@@ -69,38 +104,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resetTimer();
   }, [resetTimer]);
 
+  // Sign in
   const handleSignIn = async (email: string, password: string) => {
     try {
-      const result = await authClient.signIn.email({
-        email,
-        password,
-      });
-      
-      if (result.error) {
-        return { success: false, error: result.error.message };
-      }
-      
-      // Refresh session after sign in
-      await refetch();
+      const user = await authLogin(email, password);
+      setUser(user);
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   };
 
-  const handleRefreshSession = async () => {
-    await refetch();
+  // Refresh user data from server
+  const handleRefreshUser = async () => {
+    const serverUser = await getCurrentUser();
+    if (serverUser) {
+      setUser(serverUser);
+    }
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        isLoading: isPending,
+        isLoading,
         isAuthenticated,
         signIn: handleSignIn,
         signOut: handleSignOut,
-        refreshSession: handleRefreshSession,
+        refreshUser: handleRefreshUser,
       }}
     >
       {children}

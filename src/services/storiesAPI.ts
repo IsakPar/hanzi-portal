@@ -1,4 +1,5 @@
-import { api } from './api';
+import { api, API_BASE_URL } from './api';
+import { getAccessToken } from '@/lib/authClient';
 import type { ContentBlock } from '@/types/lesson';
 
 export interface Story {
@@ -214,16 +215,16 @@ export async function deleteQuestion(storyId: string, questionId: string): Promi
   await api.delete(`/v1/stories/${storyId}/questions/${questionId}`);
 }
 
-// File uploads
+// File uploads (use Bearer token auth)
 export async function uploadCover(storyId: string, file: File): Promise<string> {
   const formData = new FormData();
   formData.append('cover', file);
 
-  const token = localStorage.getItem('admin_token');
+  const token = getAccessToken();
   const headers: HeadersInit = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8787'}/v1/stories/${storyId}/cover`, {
+  const response = await fetch(`${API_BASE_URL}/v1/stories/${storyId}/cover`, {
     method: 'POST',
     headers,
     body: formData,
@@ -238,11 +239,11 @@ export async function uploadSentenceAudio(storyId: string, sentenceId: string, f
   const formData = new FormData();
   formData.append('audio', file);
 
-  const token = localStorage.getItem('admin_token');
+  const token = getAccessToken();
   const headers: HeadersInit = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8787'}/v1/stories/${storyId}/sentences/${sentenceId}/audio`, {
+  const response = await fetch(`${API_BASE_URL}/v1/stories/${storyId}/sentences/${sentenceId}/audio`, {
     method: 'POST',
     headers,
     body: formData,
@@ -443,11 +444,11 @@ export async function uploadSeriesCover(seriesId: string, file: File): Promise<s
   const formData = new FormData();
   formData.append('cover', file);
 
-  const token = localStorage.getItem('admin_token');
+  const token = getAccessToken();
   const headers: HeadersInit = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8787'}/v1/story-series/${seriesId}/cover`, {
+  const response = await fetch(`${API_BASE_URL}/v1/story-series/${seriesId}/cover`, {
     method: 'POST',
     headers,
     body: formData,

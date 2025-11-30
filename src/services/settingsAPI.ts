@@ -18,7 +18,7 @@ export interface AIModel {
 }
 
 export interface TierLimits {
-  tier: 'free' | 'premium' | 'pro';
+  tier: 'free' | 'premium' | 'pro'; // premium = Master in UI
   requests_per_day: number;
   tokens_per_day: number;
   max_parallel_generations: number;
@@ -109,13 +109,13 @@ export const DEFAULT_TIER_LIMITS: Record<string, TierLimits> = {
     offline_packages_allowed: 0,
     can_access_premium_content: false,
   },
-  premium: {
+  premium: { // Displayed as "Master" in UI, $9.99/month
     tier: 'premium',
     requests_per_day: 100,
     tokens_per_day: 50000,
     max_parallel_generations: 3,
-    content_downloads_per_day: 50,
-    offline_packages_allowed: 3,
+    content_downloads_per_day: 999999,
+    offline_packages_allowed: 6,
     can_access_premium_content: true,
   },
   pro: {

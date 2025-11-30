@@ -63,7 +63,7 @@ interface LogEntry {
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://hanzimaster-backend-v2.isak-parild.workers.dev';
+import { API_BASE_URL } from '@/services/api';
 const SEVALLA_URL = 'https://hanzi-vocab-val-u53gq.sevalla.app';
 const WORDS_PER_LESSON = 10;
 
@@ -151,7 +151,7 @@ export function LessonPipelineTest() {
     setResult(null);
     
     log('info', '🚀 Starting i+1 Lesson Pipeline Test');
-    log('info', `📍 API: ${API_URL}`);
+    log('info', `📍 API: ${API_BASE_URL}`);
     log('info', `📍 Sevalla: ${SEVALLA_URL}`);
     log('info', `📍 Target Lesson: ${selectedLesson}`);
     log('info', `📍 Provider: OpenRouter`);
@@ -187,7 +187,7 @@ export function LessonPipelineTest() {
         log('debug', `  Fetching batch ${batch + 1}/${maxBatches} (offset=${offset})...`);
         
         const vocabResponse = await fetch(
-          `${API_URL}/v1/vocabulary?limit=${batchSize}&offset=${offset}`, 
+          `${API_BASE_URL}/v1/vocabulary?limit=${batchSize}&offset=${offset}`, 
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         
@@ -303,11 +303,11 @@ export function LessonPipelineTest() {
       };
       
       log('debug', `  Request body:`, requestBody);
-      log('debug', `  URL: ${API_URL}/v1/ai/generate-lesson`);
+      log('debug', `  URL: ${API_BASE_URL}/v1/ai/generate-lesson`);
       log('info', `  🔄 Calling Qwen Coder 32B (generation)...`);
       
       const genStartTime = Date.now();
-      const genResponse = await fetch(`${API_URL}/v1/ai/generate-lesson`, {
+      const genResponse = await fetch(`${API_BASE_URL}/v1/ai/generate-lesson`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

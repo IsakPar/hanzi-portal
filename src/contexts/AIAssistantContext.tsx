@@ -409,7 +409,7 @@ function AIAssistantAPIWrapper({
   const api = useAPI();
   const context = useContext(AIAssistantContext);
   
-  // Load initial data
+  // Load initial data - AIAssistantProvider is now only rendered for authenticated routes
   useEffect(() => {
     if (!apiReady) return;
     

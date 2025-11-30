@@ -1,21 +1,45 @@
 /**
  * Login Page
  * Admin portal login - email/password only
- * Uses Better Auth for authentication
+ * Uses token-based authentication (JWT)
  */
 
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
-import { authClient } from '@/lib/auth-client';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Loader2, Eye, EyeOff, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
+import { login } from '@/lib/authClient';
+import { API_BASE_URL } from '@/services/api';
 
 export function LoginPage() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error' | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // Check API connectivity on mount
+  useEffect(() => {
+    const checkApi = async () => {
+      setApiStatus('checking');
+      try {
+        // Simple health check - just fetch the root endpoint
+        const response = await fetch(`${API_BASE_URL}/`);
+        console.log('[API Check] Response:', {
+          status: response.status,
+          ok: response.ok,
+        });
+        setApiStatus('ok');
+        setApiError(null);
+      } catch (err) {
+        console.error('[API Check] Failed:', err);
+        setApiStatus('error');
+        setApiError(err instanceof Error ? `${err.name}: ${err.message}` : 'Unknown error');
+      }
+    };
+    checkApi();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,19 +47,9 @@ export function LoginPage() {
     setIsLoading(true);
 
     try {
-      const result = await authClient.signIn.email({
-        email,
-        password,
-      });
-      
-      if (result.error) {
-        setError(result.error.message || 'Failed to sign in');
-        setIsLoading(false);
-        return;
-      }
-      
+      await login(email, password);
       // Successful login - redirect to dashboard
-      navigate('/');
+      window.location.href = '/';
     } catch (err) {
       setError((err as Error).message || 'Failed to sign in');
       setIsLoading(false);
@@ -128,6 +142,35 @@ export function LoginPage() {
             >
               Forgot your password?
             </Link>
+          </div>
+        </div>
+
+        {/* API Status */}
+        <div className="mt-6 p-3 rounded-lg bg-white/5 border border-white/10">
+          <div className="flex items-center gap-2 text-sm">
+            {apiStatus === 'checking' && (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                <span className="text-slate-400">Checking API connection...</span>
+              </>
+            )}
+            {apiStatus === 'ok' && (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-green-400" />
+                <span className="text-green-400">API connected</span>
+              </>
+            )}
+            {apiStatus === 'error' && (
+              <div className="w-full">
+                <div className="flex items-center gap-2">
+                  <XCircle className="w-4 h-4 text-red-400" />
+                  <span className="text-red-400">API connection failed</span>
+                </div>
+                {apiError && (
+                  <p className="text-xs text-red-300/70 mt-1 font-mono break-all">{apiError}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

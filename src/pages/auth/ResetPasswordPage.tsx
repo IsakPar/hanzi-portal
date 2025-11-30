@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { Loader2, Eye, EyeOff, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
-import { authClient } from '@/lib/auth-client';
+import { API_BASE_URL } from '@/services/api';
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -58,10 +58,18 @@ export function ResetPasswordPage() {
     setIsLoading(true);
 
     try {
-      await authClient.resetPassword({
-        newPassword: password,
-        token,
+      // Call Better Auth reset password endpoint directly
+      const res = await fetch(`${API_BASE_URL}/v1/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword: password, token }),
       });
+      
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || data.error || 'Failed to reset password');
+      }
+      
       setIsSuccess(true);
       // Redirect to login after a short delay
       setTimeout(() => navigate('/login'), 2000);

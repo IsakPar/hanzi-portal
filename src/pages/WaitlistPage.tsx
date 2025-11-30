@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { authStorage } from '@/services/authAPI';
 import { Download, RefreshCw } from 'lucide-react';
 import { logger } from '@/utils/logger';
+import { API_BASE_URL } from '@/services/api';
 
 interface WaitlistEntry {
   id: string;
@@ -21,19 +21,9 @@ export const WaitlistPage: React.FC = () => {
 
   const fetchWaitlist = async () => {
     try {
-      const token = authStorage.getToken();
-      
-      if (!token) {
-        throw new Error('Authentication token not available. Please sign in again.');
-      }
-      
-      // Ensure we point to the local backend during dev, or prod URL
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-      
-      const response = await fetch(`${apiUrl}/v1/admin/waitlist`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const token = (await import('@/lib/authClient')).getAccessToken();
+      const response = await fetch(`${API_BASE_URL}/v1/admin/waitlist`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       });
 
       if (!response.ok) {

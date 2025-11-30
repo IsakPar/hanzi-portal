@@ -5,7 +5,8 @@ import { audioAPI } from '@/services/audioAPI';
 import { cn } from '@/lib/utils';
 import { logger } from '@/utils/logger';
 import { useConfirm } from '@/hooks/useConfirm';
-import { API_BASE_URL, getAuthToken } from '@/services/api';
+import { API_BASE_URL } from '@/services/api';
+import { getAccessToken } from '@/lib/authClient';
 
 interface AudioUploaderProps {
   label?: string;
@@ -76,7 +77,7 @@ export function AudioUploader({
    * Upload file with progress tracking using XMLHttpRequest
    */
   const uploadWithProgress = useCallback(async (file: File): Promise<string> => {
-    const token = await getAuthToken();
+    const token = getAccessToken();
     
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
