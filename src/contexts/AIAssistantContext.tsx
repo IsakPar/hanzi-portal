@@ -50,6 +50,14 @@ export interface ContextFile {
   content?: string;
 }
 
+// Current draft being edited (auto-attached to AI context)
+export interface CurrentDraft {
+  type: 'lesson' | 'story';
+  id: string;
+  title: string;
+  content: string; // JSON stringified
+}
+
 // System files (persistent, stored in DB)
 export interface SystemFile {
   id: string;
@@ -102,6 +110,10 @@ interface AIAssistantContextType {
   minimizePanel: () => void;
   restorePanel: () => void;
   toggleMode: () => void;
+  
+  // Current draft being edited (auto-attached to AI context)
+  currentDraft: CurrentDraft | null;
+  setCurrentDraft: (draft: CurrentDraft | null) => void;
   
   // Session context files (temporary)
   contextFiles: ContextFile[];
@@ -184,6 +196,7 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
   
   // Session state
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
+  const [currentDraft, setCurrentDraft] = useState<CurrentDraft | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionTokens, setSessionTokens] = useState(0);
   const [sessionCost, setSessionCost] = useState(0);
@@ -324,6 +337,8 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
     minimizePanel,
     restorePanel,
     toggleMode,
+    currentDraft,
+    setCurrentDraft,
     contextFiles,
     addContextFile,
     removeContextFile,

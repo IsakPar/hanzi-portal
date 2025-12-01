@@ -16,6 +16,7 @@ import { lessonAPI, type CreateLessonPayload } from "@/services/lessonAPI";
 import { useSaveShortcut, useEscapeKey } from "@/hooks/useKeyboardShortcuts";
 import { useAbortController } from "@/hooks/useAbortController";
 import { LessonImportModal } from "@/components/lesson-editor/LessonImportModal";
+import { useAIAssistant } from "@/contexts/AIAssistantContext";
 
 // Default structure for a new lesson
 const createNewLesson = (): Lesson => ({
@@ -42,6 +43,7 @@ export function LessonEditor() {
   const navigate = useNavigate();
   const confirm = useGlobalConfirm();
   const { getSignal } = useAbortController();
+  const { setCurrentDraft } = useAIAssistant();
   const isNewLesson = !lessonId || lessonId === "new";
   const shouldImport = searchParams.get('import') === 'true';
 
@@ -132,6 +134,23 @@ export function LessonEditor() {
   useEffect(() => {
     loadLesson();
   }, [loadLesson]);
+
+  // Update AI context with current draft whenever lesson changes
+  useEffect(() => {
+    if (lesson) {
+      setCurrentDraft({
+        type: 'lesson',
+        id: lesson.id || 'new',
+        title: lesson.title || 'Untitled Lesson',
+        content: JSON.stringify(lesson, null, 2),
+      });
+    }
+    
+    // Clear draft when leaving the editor
+    return () => {
+      setCurrentDraft(null);
+    };
+  }, [lesson, setCurrentDraft]);
   
   // Keyboard shortcuts
   useSaveShortcut(() => {

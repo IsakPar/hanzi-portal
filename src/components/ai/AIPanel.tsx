@@ -51,6 +51,7 @@ export function AIPanel() {
     minimizePanel,
     restorePanel,
     toggleMode,
+    currentDraft,
     contextFiles,
     removeContextFile,
     systemFiles,
@@ -226,12 +227,24 @@ export function AIPanel() {
     setIsLoading(true);
 
     try {
+      // Build explicit context from attached files
       const explicitContext = contextFiles.map(f => ({
         type: f.type,
         id: f.id,
         title: f.title,
         content: f.content,
       }));
+
+      // Auto-include current draft if one is being edited
+      // This ensures the AI can "see" the lesson you're currently editing
+      if (currentDraft) {
+        explicitContext.unshift({
+          type: currentDraft.type,
+          id: currentDraft.id,
+          title: `[CURRENT DRAFT] ${currentDraft.title}`,
+          content: currentDraft.content,
+        });
+      }
 
       const conversationHistory = messages.slice(-10).map(m => ({
         role: m.role,
@@ -475,6 +488,19 @@ export function AIPanel() {
         {/* Session Context Files Bar */}
         <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 no-drag">
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Current Draft Indicator */}
+            {currentDraft && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-lg text-sm">
+                <span className="text-green-600">✏️</span>
+                <span className="text-green-700 font-medium max-w-[120px] truncate">
+                  {currentDraft.title}
+                </span>
+                <span className="text-[10px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded-full font-medium">
+                  EDITING
+                </span>
+              </div>
+            )}
+            
             <button
               onClick={() => setShowFilePicker(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors border border-dashed border-gray-300 hover:border-purple-300"
