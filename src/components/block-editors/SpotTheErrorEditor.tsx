@@ -9,13 +9,15 @@ import type { ExerciseSpotErrorBlock } from '@/types/lesson';
 import { Plus, Trash2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 
 interface SpotTheErrorEditorProps {
   block: ExerciseSpotErrorBlock;
   onChange: (field: string, value: any) => void;
+  lessonId?: string;
 }
 
-export function SpotTheErrorEditor({ block, onChange }: SpotTheErrorEditorProps) {
+export function SpotTheErrorEditor({ block, onChange, lessonId = '' }: SpotTheErrorEditorProps) {
   const [words, setWords] = useState<string[]>(block.content.words || []);
   
   const updateContent = (field: string, value: any) => {
@@ -51,7 +53,7 @@ export function SpotTheErrorEditor({ block, onChange }: SpotTheErrorEditorProps)
         
         <div className="space-y-2">
           {words.map((word, index) => (
-            <div key={index} className="flex gap-2">
+            <div key={index} className="flex gap-2 items-center">
               <Input
                 value={word}
                 onChange={(e) => {
@@ -61,6 +63,15 @@ export function SpotTheErrorEditor({ block, onChange }: SpotTheErrorEditorProps)
                 }}
                 placeholder={`Word ${index + 1}`}
                 className="flex-1"
+              />
+              <InlineAudioStatus
+                text={word}
+                audioUrl={undefined}
+                lessonId={lessonId || 'draft'}
+                blockId={block.id}
+                optionId={`word-${index}`}
+                onAudioSaved={() => {}}
+                disabled={!lessonId}
               />
               <button
                 onClick={() => updateWords(words.filter((_, i) => i !== index))}

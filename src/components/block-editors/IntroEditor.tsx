@@ -4,14 +4,16 @@
  */
 
 import { FormField } from '../shared/FormField';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 import type { IntroBlock } from '@/types/lesson';
 
 interface IntroEditorProps {
   block: IntroBlock;
   onChange: (field: string, value: any) => void;
+  lessonId?: string;
 }
 
-export function IntroEditor({ block, onChange }: IntroEditorProps) {
+export function IntroEditor({ block, onChange, lessonId = '' }: IntroEditorProps) {
   // Helper to update nested content
   const updateContent = (field: string, value: any) => {
     onChange('content', {
@@ -65,12 +67,27 @@ export function IntroEditor({ block, onChange }: IntroEditorProps) {
         </div>
         
         <div className="grid grid-cols-1 gap-4">
-          <FormField
-            label="Hanzi"
-            value={block.content.exampleSentence?.hanzi || ''}
-            onChange={(value) => updateExample('hanzi', value)}
-            placeholder="你好！我是学生。"
-          />
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Hanzi</label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="text"
+                value={block.content.exampleSentence?.hanzi || ''}
+                onChange={(e) => updateExample('hanzi', e.target.value)}
+                placeholder="你好！我是学生。"
+                className="flex-1 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+              <InlineAudioStatus
+                text={block.content.exampleSentence?.hanzi || ''}
+                audioUrl={block.content.exampleSentence?.audioUrl}
+                lessonId={lessonId || 'draft'}
+                blockId={block.id}
+                optionId="example-sentence"
+                onAudioSaved={(url) => updateExample('audioUrl', url)}
+                disabled={!lessonId}
+              />
+            </div>
+          </div>
           
           <FormField
             label="Pinyin"

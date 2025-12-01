@@ -5,13 +5,12 @@
 
 import { useState } from 'react';
 import { FormField } from '../shared/FormField';
-import { AudioUploader } from '../audio/AudioUploader';
-// import { RemixPreview } from '../shared/RemixPreview'; // TODO: Migrate RemixPreview
 import type { ReadingPassageBlock } from '@/types/lesson';
 import { Plus, Trash2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 import { cn } from '@/lib/utils';
 
 interface ReadingPassageEditorProps {
@@ -86,17 +85,28 @@ export function ReadingPassageEditor({ block, onChange, lessonId }: ReadingPassa
               <div className="space-y-3">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Chinese Text <span className="text-destructive">*</span></Label>
-                  <Textarea
-                    value={paragraph.hanzi}
-                    onChange={(e) => {
-                      const newParagraphs = [...paragraphs];
-                      newParagraphs[index].hanzi = e.target.value;
-                      updateParagraphs(newParagraphs);
-                    }}
-                    placeholder="我今天很忙..."
-                    rows={3}
-                    className="font-medium"
-                  />
+                  <div className="flex gap-2 items-start">
+                    <Textarea
+                      value={paragraph.hanzi}
+                      onChange={(e) => {
+                        const newParagraphs = [...paragraphs];
+                        newParagraphs[index].hanzi = e.target.value;
+                        updateParagraphs(newParagraphs);
+                      }}
+                      placeholder="我今天很忙..."
+                      rows={3}
+                      className="font-medium flex-1"
+                    />
+                    <InlineAudioStatus
+                      text={paragraph.hanzi || ''}
+                      audioUrl={paragraph.audioUrl}
+                      lessonId={lessonId || 'draft'}
+                      blockId={block.id}
+                      optionId={`paragraph-${index}`}
+                      onAudioSaved={(url) => updateParagraphAudio(index, url)}
+                      disabled={!lessonId}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1">
@@ -127,19 +137,6 @@ export function ReadingPassageEditor({ block, onChange, lessonId }: ReadingPassa
                     Used for click-to-reveal translation overlay in the app
                   </p>
                 </div>
-
-                {/* AUDIO UPLOADER */}
-                {lessonId && (
-                  <AudioUploader
-                    audioUrl={paragraph.audioUrl}
-                    lessonId={lessonId}
-                    context={`paragraph_${index}`}
-                    onChange={(url) => updateParagraphAudio(index, url)}
-                    label="Audio File"
-                    helperText="Per-sentence audio (MP3, max 5MB)"
-                    mini
-                  />
-                )}
               </div>
             </div>
           ))}

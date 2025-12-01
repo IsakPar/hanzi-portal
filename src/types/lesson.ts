@@ -41,6 +41,7 @@ export interface IntroBlock extends BaseBlock {
       hanzi: string;
       pinyin?: string;
       translation: string;
+      audioUrl?: string;
     };
     primaryLabel?: string;
     secondaryAction?: {
@@ -93,6 +94,7 @@ export interface PatternBlock extends BaseBlock {
       hanzi: string;
       pinyin: string;
       translation: string;
+      audioUrl?: string;
     }>;
   };
 }
@@ -174,6 +176,7 @@ export interface ReadingPassageBlock extends BaseBlock {
 export interface ComprehensionChoice {
   text: string;
   isCorrect: boolean;
+  audioUrl?: string;
 }
 
 export interface ComprehensionQuestion {

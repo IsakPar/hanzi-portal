@@ -4,7 +4,7 @@
  */
 
 import { FormField } from '../shared/FormField';
-import { AudioUploader } from '../audio/AudioUploader';
+import { ElevenLabsGenerator } from '../audio/ElevenLabsGenerator';
 import type { HeroHanziBlock } from '@/types/lesson';
 
 interface HeroHanziEditorProps {
@@ -46,15 +46,15 @@ export function HeroHanziEditor({ block, onChange, lessonId }: HeroHanziEditorPr
         placeholder="e.g., Hello"
       />
       
-      {/* AUDIO UPLOADER */}
-      {lessonId && (
-        <AudioUploader
-          audioUrl={block.content.audioUrl}
+      {/* AUDIO - ElevenLabs Generator */}
+      {lessonId && block.content.hanzi && (
+        <ElevenLabsGenerator
+          text={block.content.hanzi}
           lessonId={lessonId}
-          context={`hero_${block.id}`}
-          onChange={(url) => updateContent('audioUrl', url || '')}
-          label="Audio File"
-          helperText="Pronunciation audio (MP3, max 5MB)"
+          blockId={block.id}
+          savedAudioUrl={block.content.audioUrl}
+          onSaved={(url) => updateContent('audioUrl', url)}
+          onDeleted={() => updateContent('audioUrl', '')}
         />
       )}
     </div>

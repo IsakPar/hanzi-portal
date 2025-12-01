@@ -5,11 +5,11 @@
 
 import { useState } from 'react';
 import { FormField } from '../shared/FormField';
-import { AudioUploader } from '../audio/AudioUploader';
 import type { DialogueBlock } from '@/types/lesson';
 import { Plus, Trash2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 
 interface DialogueEditorProps {
   block: DialogueBlock;
@@ -33,7 +33,7 @@ export function DialogueEditor({ block, onChange, lessonId }: DialogueEditorProp
   };
 
   const addExchange = () => {
-    updateExchanges([...exchanges, { speaker: '', hanzi: '', pinyin: '', translation: '', audioUrl: '' }]);
+    updateExchanges([...exchanges, { speaker: '', text: '', pinyin: '', translation: '', audioUrl: '' }]);
   };
 
   const updateExchange = (index: number, field: string, value: string) => {
@@ -96,12 +96,24 @@ export function DialogueEditor({ block, onChange, lessonId }: DialogueEditorProp
                     />
                   </div>
                   <div className="col-span-3">
-                     <Label className="text-xs text-muted-foreground mb-1 block">Chinese Text</Label>
-                     <Input
-                      value={exchange.text || exchange.hanzi || ''} // Handle both legacy 'text' and new 'hanzi' keys if needed
-                      onChange={(e) => updateExchange(index, 'text', e.target.value)}
-                      placeholder="你好！"
-                    />
+                    <Label className="text-xs text-muted-foreground mb-1 block">Chinese Text</Label>
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        value={exchange.text || exchange.hanzi || ''}
+                        onChange={(e) => updateExchange(index, 'text', e.target.value)}
+                        placeholder="你好！"
+                        className="flex-1"
+                      />
+                      <InlineAudioStatus
+                        text={exchange.text || exchange.hanzi || ''}
+                        audioUrl={exchange.audioUrl}
+                        lessonId={lessonId || 'draft'}
+                        blockId={block.id}
+                        optionId={`dialogue-${index}`}
+                        onAudioSaved={(url) => updateExchange(index, 'audioUrl', url)}
+                        disabled={!lessonId}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -123,19 +135,6 @@ export function DialogueEditor({ block, onChange, lessonId }: DialogueEditorProp
                     />
                   </div>
                 </div>
-
-                {/* AUDIO UPLOADER */}
-                {lessonId && (
-                  <AudioUploader
-                    audioUrl={exchange.audioUrl}
-                    lessonId={lessonId}
-                    context={`dialogue_${index}`}
-                    onChange={(url) => updateExchange(index, 'audioUrl', url || '')}
-                    label="Audio File"
-                    helperText="Per-line audio (MP3, max 5MB)"
-                    mini
-                  />
-                )}
               </div>
             </div>
           ))}

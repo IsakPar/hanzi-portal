@@ -10,14 +10,19 @@ import { Plus, Trash2, CheckCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
+import { AISuggestButton } from '@/components/ai/AISuggestButton';
+import type { Suggestion } from '@/services/aiSuggestAPI';
 import { cn } from '@/lib/utils';
 
 interface ReadingComprehensionEditorProps {
   block: ReadingComprehensionBlock;
   onChange: (field: string, value: any) => void;
+  lessonId?: string;
+  hskLevel?: number;
 }
 
-export function ReadingComprehensionEditor({ block, onChange }: ReadingComprehensionEditorProps) {
+export function ReadingComprehensionEditor({ block, onChange, lessonId = '', hskLevel = 1 }: ReadingComprehensionEditorProps) {
   const [questions, setQuestions] = useState(
     block.content.questions || [
       {
@@ -90,7 +95,24 @@ export function ReadingComprehensionEditor({ block, onChange }: ReadingComprehen
 
               {/* Choices */}
               <div className="space-y-3 pl-4 border-l-2 border-muted">
-                <Label className="text-xs text-muted-foreground">Answer Choices</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">Answer Choices</Label>
+                  {question.choices.some((c: any) => c.isCorrect && c.text) && (
+                    <AISuggestButton
+                      context="mcq-wrong-option"
+                      correctAnswer={question.choices.find((c: any) => c.isCorrect)?.text || ''}
+                      hskLevel={hskLevel}
+                      exclude={question.choices.map((c: any) => c.text).filter(Boolean)}
+                      count={3}
+                      onSelect={(suggestion: Suggestion) => {
+                        const newQuestions = [...questions];
+                        newQuestions[qIndex].choices.push({ text: suggestion.text, isCorrect: false });
+                        updateQuestions(newQuestions);
+                      }}
+                      size="sm"
+                    />
+                  )}
+                </div>
                 
                 <div className="space-y-2">
                   {question.choices.map((choice: any, cIndex: number) => (
@@ -109,6 +131,37 @@ export function ReadingComprehensionEditor({ block, onChange }: ReadingComprehen
                           )}
                         />
                       </div>
+                      
+                      <InlineAudioStatus
+                        text={choice.text || ''}
+                        audioUrl={choice.audioUrl}
+                        lessonId={lessonId || 'draft'}
+                        blockId={block.id}
+                        optionId={`q${qIndex}-c${cIndex}`}
+                        onAudioSaved={(url) => {
+                          const newQuestions = [...questions];
+                          newQuestions[qIndex].choices[cIndex].audioUrl = url;
+                          updateQuestions(newQuestions);
+                        }}
+                        disabled={!lessonId}
+                      />
+                      
+                      {/* AI Suggest for wrong options */}
+                      {!choice.isCorrect && question.choices.some((c: any) => c.isCorrect && c.text) && (
+                        <AISuggestButton
+                          context="mcq-wrong-option"
+                          correctAnswer={question.choices.find((c: any) => c.isCorrect)?.text || ''}
+                          hskLevel={hskLevel}
+                          exclude={question.choices.map((c: any) => c.text).filter(Boolean)}
+                          count={5}
+                          onSelect={(suggestion: Suggestion) => {
+                            const newQuestions = [...questions];
+                            newQuestions[qIndex].choices[cIndex].text = suggestion.text;
+                            updateQuestions(newQuestions);
+                          }}
+                          size="sm"
+                        />
+                      )}
                       
                       <button
                         onClick={() => {

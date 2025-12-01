@@ -11,6 +11,9 @@ import type { ExerciseDragSentenceBlock } from '@/types/lesson';
 import { Plus } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { WordWithAlternatives } from '../lesson-editor/WordWithAlternatives';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
+import { AISuggestButton } from '@/components/ai/AISuggestButton';
+import type { Suggestion } from '@/services/aiSuggestAPI';
 
 interface Alternative {
   id: string;
@@ -22,9 +25,11 @@ interface Alternative {
 interface DragSentenceEditorProps {
   block: ExerciseDragSentenceBlock;
   onChange: (field: string, value: any) => void;
+  lessonId?: string;
+  hskLevel?: number;
 }
 
-export function DragSentenceEditor({ block, onChange }: DragSentenceEditorProps) {
+export function DragSentenceEditor({ block, onChange, lessonId = '', hskLevel = 1 }: DragSentenceEditorProps) {
   const [correctOrder, setCorrectOrder] = useState<string[]>(block.content.correctOrder || []);
   const [pool, setPool] = useState<string[]>(block.content.wordPool || []);
   
@@ -132,11 +137,28 @@ export function DragSentenceEditor({ block, onChange }: DragSentenceEditorProps)
 
       {/* Word Pool - Auto-populated from correct order + alternatives */}
       <div className="space-y-2">
-        <Label>
-          Word Pool (auto-generated)
-        </Label>
+        <div className="flex items-center justify-between">
+          <Label>
+            Word Pool (auto-generated)
+          </Label>
+          {correctOrder.length > 0 && (
+            <AISuggestButton
+              context="distractor-word"
+              correctAnswer={correctOrder.join('')}
+              hskLevel={hskLevel}
+              exclude={pool}
+              count={5}
+              onSelect={(suggestion: Suggestion) => {
+                if (!pool.includes(suggestion.text)) {
+                  updatePool([...pool, suggestion.text]);
+                }
+              }}
+              size="md"
+            />
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">
-          Includes correct words + their alternatives. Add extra distractors below:
+          Includes correct words + alternatives. Click ✨ for AI-suggested distractors.
         </p>
         <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg min-h-12">
           {pool.map((word, index) => (
@@ -145,6 +167,15 @@ export function DragSentenceEditor({ block, onChange }: DragSentenceEditorProps)
               className="inline-flex items-center gap-1 px-2 py-1 bg-white border rounded text-sm"
             >
               {word}
+              <InlineAudioStatus
+                text={word}
+                audioUrl={undefined}
+                lessonId={lessonId || 'draft'}
+                blockId={block.id}
+                optionId={`pool-${index}`}
+                onAudioSaved={() => {}}
+                disabled={!lessonId}
+              />
               {!correctOrder.includes(word) && !Object.values(wordAlternatives).flat().some(a => a.hanzi === word) && (
                 <button
                   type="button"

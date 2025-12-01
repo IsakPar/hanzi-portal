@@ -38,10 +38,10 @@ export function BlockEditor({ block, onChange, lessonId, hskLevel = 1 }: BlockEd
 
   switch (block.type) {
     case "intro":
-      return <IntroEditor block={block} onChange={handleFieldChange} />;
+      return <IntroEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "hero_hanzi":
-      return <HeroHanziEditor block={block} onChange={handleFieldChange} />;
+      return <HeroHanziEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "explain":
       return <ExplainEditor block={block} onChange={handleFieldChange} />;
@@ -50,16 +50,16 @@ export function BlockEditor({ block, onChange, lessonId, hskLevel = 1 }: BlockEd
       return <TipEditor block={block} onChange={handleFieldChange} />;
     
     case "pattern":
-      return <PatternEditor block={block} onChange={handleFieldChange} />;
+      return <PatternEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
     
     case "dialogue":
-      return <DialogueEditor block={block} onChange={handleFieldChange} />;
+      return <DialogueEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "reading_passage":
-      return <ReadingPassageEditor block={block} onChange={handleFieldChange} />;
+      return <ReadingPassageEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "reading_comprehension":
-      return <ReadingComprehensionEditor block={block} onChange={handleFieldChange} />;
+      return <ReadingComprehensionEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
     
     case "speaking_practice":
       return <SpeakingPracticeEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
@@ -71,13 +71,13 @@ export function BlockEditor({ block, onChange, lessonId, hskLevel = 1 }: BlockEd
       return <MultipleChoiceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
     
     case "exercise_drag_sentence":
-      return <DragSentenceEditor block={block} onChange={handleFieldChange} />;
+      return <DragSentenceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
     
     case "exercise_spot_error":
-      return <SpotTheErrorEditor block={block} onChange={handleFieldChange} />;
+      return <SpotTheErrorEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "exercise_build_sentence":
-      return <BuildSentenceEditor block={block} onChange={handleFieldChange} />;
+      return <BuildSentenceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
     
     case "celebration":
       return <CelebrationEditor block={block} onChange={handleFieldChange} />;

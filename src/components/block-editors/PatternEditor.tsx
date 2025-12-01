@@ -9,13 +9,18 @@ import type { PatternBlock } from '@/types/lesson';
 import { Plus, Trash2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
+import { AISuggestButton } from '@/components/ai/AISuggestButton';
+import type { Suggestion } from '@/services/aiSuggestAPI';
 
 interface PatternEditorProps {
   block: PatternBlock;
   onChange: (field: string, value: any) => void;
+  lessonId?: string;
+  hskLevel?: number;
 }
 
-export function PatternEditor({ block, onChange }: PatternEditorProps) {
+export function PatternEditor({ block, onChange, lessonId = '', hskLevel = 1 }: PatternEditorProps) {
   // Fallback to empty array if examples is undefined
   const [examples, setExamples] = useState(block.content.examples || []);
   
@@ -31,6 +36,23 @@ export function PatternEditor({ block, onChange }: PatternEditorProps) {
     setExamples(newExamples);
     updateContent('examples', newExamples);
   };
+
+  const handleAudioSaved = (index: number, audioUrl: string) => {
+    const newExamples = [...examples];
+    newExamples[index] = { ...newExamples[index], audioUrl };
+    updateExamples(newExamples);
+  };
+
+  const handleSuggestionSelect = (suggestion: Suggestion) => {
+    // Add a new example from the suggestion
+    updateExamples([
+      ...examples,
+      { hanzi: suggestion.text, pinyin: suggestion.pinyin || '', translation: '', audioUrl: undefined }
+    ]);
+  };
+
+  // Get first example as reference for AI suggestions
+  const firstExample = examples[0]?.hanzi || block.content.template || '';
   
   return (
     <div className="space-y-4">
@@ -52,11 +74,24 @@ export function PatternEditor({ block, onChange }: PatternEditorProps) {
       
       {/* Examples Array */}
       <div className="space-y-2">
-        <Label>
-          Examples <span className="text-destructive">*</span>
-        </Label>
+        <div className="flex items-center justify-between">
+          <Label>
+            Examples <span className="text-destructive">*</span>
+          </Label>
+          {firstExample && (
+            <AISuggestButton
+              context="similar-word"
+              correctAnswer={firstExample}
+              hskLevel={hskLevel}
+              exclude={examples.map((e: any) => e.hanzi).filter(Boolean)}
+              count={5}
+              onSelect={handleSuggestionSelect}
+              size="md"
+            />
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">
-          Add example sentences demonstrating this pattern
+          Add example sentences. Click ✨ to get AI suggestions.
         </p>
         
         <div className="space-y-3">
@@ -74,15 +109,27 @@ export function PatternEditor({ block, onChange }: PatternEditorProps) {
               </div>
               
               <div className="grid gap-2">
-                <Input
-                  value={example.hanzi || ''}
-                  onChange={(e) => {
-                    const newExamples = [...examples];
-                    newExamples[index] = { ...newExamples[index], hanzi: e.target.value };
-                    updateExamples(newExamples);
-                  }}
-                  placeholder="Chinese text"
-                />
+                <div className="flex gap-2 items-center">
+                  <Input
+                    value={example.hanzi || ''}
+                    onChange={(e) => {
+                      const newExamples = [...examples];
+                      newExamples[index] = { ...newExamples[index], hanzi: e.target.value };
+                      updateExamples(newExamples);
+                    }}
+                    placeholder="Chinese text"
+                    className="flex-1"
+                  />
+                  <InlineAudioStatus
+                    text={example.hanzi || ''}
+                    audioUrl={example.audioUrl}
+                    lessonId={lessonId || 'draft'}
+                    blockId={block.id}
+                    optionId={`example-${index}`}
+                    onAudioSaved={(url) => handleAudioSaved(index, url)}
+                    disabled={!lessonId}
+                  />
+                </div>
                 <Input
                   value={example.pinyin || ''}
                   onChange={(e) => {

@@ -9,14 +9,19 @@ import type { ExerciseBuildSentenceBlock } from '@/types/lesson';
 import { Plus, Trash2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
+import { AISuggestButton } from '@/components/ai/AISuggestButton';
+import type { Suggestion } from '@/services/aiSuggestAPI';
 import { cn } from '@/lib/utils';
 
 interface BuildSentenceEditorProps {
   block: ExerciseBuildSentenceBlock;
   onChange: (field: string, value: any) => void;
+  lessonId?: string;
+  hskLevel?: number;
 }
 
-export function BuildSentenceEditor({ block, onChange }: BuildSentenceEditorProps) {
+export function BuildSentenceEditor({ block, onChange, lessonId = '', hskLevel = 1 }: BuildSentenceEditorProps) {
   const [slots, setSlots] = useState(block.content.slots || [{ content: null, isFixed: false }]);
   const [phrasePool, setPhrasePool] = useState<string[]>(block.content.phrasePool || []);
   
@@ -125,16 +130,33 @@ export function BuildSentenceEditor({ block, onChange }: BuildSentenceEditorProp
       
       {/* Phrase Pool */}
       <div className="space-y-2">
-        <Label>
-          Phrase Pool <span className="text-destructive">*</span>
-        </Label>
+        <div className="flex items-center justify-between">
+          <Label>
+            Phrase Pool <span className="text-destructive">*</span>
+          </Label>
+          {phrasePool.length > 0 && (
+            <AISuggestButton
+              context="distractor-word"
+              correctAnswer={phrasePool[0] || ''}
+              hskLevel={hskLevel}
+              exclude={phrasePool}
+              count={5}
+              onSelect={(suggestion: Suggestion) => {
+                if (!phrasePool.includes(suggestion.text)) {
+                  updatePhrasePool([...phrasePool, suggestion.text]);
+                }
+              }}
+              size="md"
+            />
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">
-          Available phrases for user to choose from (only non-fixed ones)
+          Available phrases. Click ✨ for AI-suggested distractors.
         </p>
         
         <div className="space-y-2">
           {phrasePool.map((phrase, index) => (
-            <div key={index} className="flex gap-2">
+            <div key={index} className="flex gap-2 items-center">
               <Input
                 value={phrase}
                 onChange={(e) => {
@@ -144,6 +166,15 @@ export function BuildSentenceEditor({ block, onChange }: BuildSentenceEditorProp
                 }}
                 placeholder={`Phrase ${index + 1}`}
                 className="flex-1"
+              />
+              <InlineAudioStatus
+                text={phrase}
+                audioUrl={undefined}
+                lessonId={lessonId || 'draft'}
+                blockId={block.id}
+                optionId={`phrase-${index}`}
+                onAudioSaved={() => {}}
+                disabled={!lessonId}
               />
               <button
                 onClick={() => updatePhrasePool(phrasePool.filter((_, i) => i !== index))}
