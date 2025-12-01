@@ -15,6 +15,7 @@ import {
   MessageSquare,
   AlertTriangle,
   CheckCircle2,
+  Bot,
 } from "lucide-react";
 import {
   searchVocabulary,
@@ -297,6 +298,14 @@ export function VocabularyList() {
             </p>
           </div>
           <div className="flex gap-3">
+            <Button
+              onClick={() => navigate("/vocabulary/tagging")}
+              variant="outline"
+              className="border-green-300 text-green-700 hover:bg-green-50"
+            >
+              <Bot className="w-4 h-4 mr-2" />
+              AI Tagging
+            </Button>
             <Button
               onClick={() => navigate("/vocabulary/import")}
               variant="outline"

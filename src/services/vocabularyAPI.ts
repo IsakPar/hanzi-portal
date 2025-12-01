@@ -14,6 +14,9 @@ export interface VocabularyEntry {
   category: string;
   hskLevel: number;
   tags?: string[] | null;
+  // Pedagogic metadata for distractor generation
+  pos?: string | null;        // part of speech: noun, verb, adj, etc.
+  tonePattern?: string | null; // e.g., "1-1", "3-3", "2-4"
   // Audio and examples
   wordAudioR2Key?: string | null;
   exampleChinese?: string | null;
@@ -21,6 +24,20 @@ export interface VocabularyEntry {
   exampleEnglish?: string | null;
   exampleAudioR2Key?: string | null;
 }
+
+// Part of speech options for vocabulary
+export const POS_OPTIONS = [
+  { value: 'noun', label: 'Noun', example: '妈妈, 苹果' },
+  { value: 'verb', label: 'Verb', example: '吃, 看' },
+  { value: 'adj', label: 'Adjective', example: '大, 好' },
+  { value: 'adv', label: 'Adverb', example: '很, 非常' },
+  { value: 'pronoun', label: 'Pronoun', example: '我, 你' },
+  { value: 'num', label: 'Number', example: '一, 两' },
+  { value: 'measure', label: 'Measure Word', example: '个, 本' },
+  { value: 'particle', label: 'Particle', example: '的, 了' },
+  { value: 'conjunction', label: 'Conjunction', example: '和, 但是' },
+  { value: 'preposition', label: 'Preposition', example: '在, 从' },
+] as const;
 
 export interface VocabularySearchParams {
   query?: string;

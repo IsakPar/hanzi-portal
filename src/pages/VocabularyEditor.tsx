@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { 
   ArrowLeft, Save, AlertCircle, CheckCircle2, Music, Loader2,
-  Sparkles, Play, Pause, RotateCcw, Check, X, Volume2
+  Sparkles, Play, Pause, RotateCcw, Check, X, Volume2, Bot, RefreshCw
 } from "lucide-react";
 import { HanziInput } from "@/components/shared/HanziInput";
 import {
@@ -21,8 +21,10 @@ import {
   saveExampleAudio,
   HSK_LEVELS,
   COMMON_CATEGORIES,
+  POS_OPTIONS,
   type VocabularyEntry,
 } from "@/services/vocabularyAPI";
+import { tagWord } from "@/services/distractorsAPI";
 import { toast } from "@/hooks/useToast";
 import { processAudioAtSpeed } from "@/utils/audioProcessor";
 import { CDN_BASE_URL } from "@/services/api";
@@ -56,6 +58,16 @@ export function VocabularyEditor() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tagsInput, setTagsInput] = useState("");
+  
+  // Metadata state
+  const [pos, setPos] = useState<string>("");
+  const [tonePattern, setTonePattern] = useState<string>("");
+  const [aiTagging, setAiTagging] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<{
+    pos?: { value: string; suggested: boolean };
+    tonePattern?: { value: string; computed: boolean };
+    category?: { value: string; suggested: boolean };
+  } | null>(null);
   
   // AI generation state
   const [generatingExample, setGeneratingExample] = useState(false);
@@ -92,11 +104,90 @@ export function VocabularyEditor() {
       const data = await getVocabulary(id);
       setEntry(data);
       setTagsInput(data.tags?.join(", ") || "");
+      // Load metadata
+      setPos(data.pos || "");
+      setTonePattern(data.tonePattern || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load entry");
     } finally {
       setLoading(false);
     }
+  }
+
+  // === METADATA AI TAGGING ===
+  
+  /**
+   * Extract tone pattern from pinyin string
+   * e.g., "māmā" → "1-1", "nǐ hǎo" → "3-3"
+   */
+  function extractTonePatternFromPinyin(pinyin: string): string {
+    const toneMap: Record<string, string> = {
+      'ā': '1', 'á': '2', 'ǎ': '3', 'à': '4',
+      'ē': '1', 'é': '2', 'ě': '3', 'è': '4',
+      'ī': '1', 'í': '2', 'ǐ': '3', 'ì': '4',
+      'ō': '1', 'ó': '2', 'ǒ': '3', 'ò': '4',
+      'ū': '1', 'ú': '2', 'ǔ': '3', 'ù': '4',
+      'ǖ': '1', 'ǘ': '2', 'ǚ': '3', 'ǜ': '4',
+    };
+    
+    const tones: string[] = [];
+    const syllables = pinyin.toLowerCase().split(/\s+/);
+    
+    for (const syllable of syllables) {
+      let foundTone = '5'; // neutral tone default
+      for (const char of syllable) {
+        if (toneMap[char]) {
+          foundTone = toneMap[char];
+          break;
+        }
+      }
+      tones.push(foundTone);
+    }
+    
+    return tones.join('-');
+  }
+
+  async function handleAiSuggestMetadata() {
+    if (isNew || !id) {
+      toast.error("Save first", "Please save the entry before AI tagging");
+      return;
+    }
+
+    setAiTagging(true);
+    setAiSuggestions(null);
+
+    try {
+      // 1. Compute tone pattern from pinyin (no AI needed)
+      const computedTone = extractTonePatternFromPinyin(entry.pinyin || "");
+      setTonePattern(computedTone);
+
+      // 2. Get POS suggestion from AI
+      const posResult = await tagWord({ wordId: id, field: 'pos' });
+      if (posResult.success) {
+        setPos(posResult.value);
+      }
+
+      setAiSuggestions({
+        pos: posResult.success ? { value: posResult.value, suggested: true } : undefined,
+        tonePattern: { value: computedTone, computed: true },
+      });
+
+      toast.success("AI tagging complete", "Review the suggestions and save");
+    } catch (err) {
+      toast.error("AI tagging failed", (err as Error).message);
+    } finally {
+      setAiTagging(false);
+    }
+  }
+
+  function handleComputeTonePattern() {
+    if (!entry.pinyin) {
+      toast.error("No pinyin", "Enter pinyin first to compute tone pattern");
+      return;
+    }
+    const computed = extractTonePatternFromPinyin(entry.pinyin);
+    setTonePattern(computed);
+    toast.success("Tone pattern computed", computed);
   }
 
   // === AI EXAMPLE GENERATION ===
@@ -277,6 +368,10 @@ export function VocabularyEditor() {
         category: entry.category!,
         hskLevel: entry.hskLevel!,
         tags: tags.length > 0 ? tags : undefined,
+        // Pedagogic metadata
+        pos: pos || undefined,
+        tonePattern: tonePattern || undefined,
+        // Audio and examples
         wordAudioR2Key: entry.wordAudioR2Key || undefined,
         exampleChinese: entry.exampleChinese || undefined,
         examplePinyin: entry.examplePinyin || undefined,
@@ -635,6 +730,145 @@ export function VocabularyEditor() {
           </div>
         </div>
 
+        {/* SECTION 3: PEDAGOGIC METADATA */}
+        <div className="border-t border-gray-200 pt-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <span className="bg-green-100 text-green-700 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">3</span>
+            Pedagogic Metadata
+            <span className="text-xs text-gray-400 font-normal ml-2">
+              For smart distractor generation
+            </span>
+          </h2>
+
+          {/* AI Fill All Button */}
+          <div className="mb-4">
+            <Button 
+              onClick={handleAiSuggestMetadata}
+              disabled={aiTagging || isNew}
+              className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
+            >
+              {aiTagging ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  AI Analyzing...
+                </>
+              ) : (
+                <>
+                  <Bot className="w-4 h-4 mr-2" />
+                  AI Fill All Metadata
+                </>
+              )}
+            </Button>
+            {isNew && (
+              <p className="text-xs text-amber-600 mt-1">
+                Save the entry first to use AI tagging
+              </p>
+            )}
+          </div>
+
+          {/* Metadata Fields */}
+          <div className="space-y-4">
+            {/* POS & Tone Pattern */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Part of Speech */}
+              <div>
+                <Label htmlFor="pos">Part of Speech (POS)</Label>
+                <select
+                  id="pos"
+                  value={pos}
+                  onChange={(e) => setPos(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Not set</option>
+                  {POS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label} ({opt.example})
+                    </option>
+                  ))}
+                </select>
+                {aiSuggestions?.pos && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    AI suggested: {aiSuggestions.pos.value}
+                  </p>
+                )}
+              </div>
+
+              {/* Tone Pattern */}
+              <div>
+                <Label htmlFor="tonePattern" className="flex items-center justify-between">
+                  <span>Tone Pattern</span>
+                  <button
+                    type="button"
+                    onClick={handleComputeTonePattern}
+                    disabled={!entry.pinyin}
+                    className="text-xs text-green-600 hover:text-green-700 flex items-center gap-1 disabled:text-gray-400"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Compute from pinyin
+                  </button>
+                </Label>
+                <Input
+                  id="tonePattern"
+                  value={tonePattern}
+                  onChange={(e) => setTonePattern(e.target.value)}
+                  placeholder="e.g., 1-1, 3-3, 2-4"
+                  className="font-mono"
+                />
+                {aiSuggestions?.tonePattern && (
+                  <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Auto-computed: {aiSuggestions.tonePattern.value}
+                  </p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Format: tone numbers separated by dashes (1-4 for tones, 5 for neutral)
+                </p>
+              </div>
+            </div>
+
+            {/* Metadata Status Summary */}
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+              <Label className="text-green-900 flex items-center gap-2 mb-2">
+                <Bot className="w-4 h-4" />
+                Metadata Status
+              </Label>
+              <div className="flex gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  {pos ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <X className="w-4 h-4 text-gray-400" />
+                  )}
+                  <span className={pos ? "text-green-700" : "text-gray-500"}>
+                    POS: {pos || "Not set"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {tonePattern ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <X className="w-4 h-4 text-gray-400" />
+                  )}
+                  <span className={tonePattern ? "text-green-700" : "text-gray-500"}>
+                    Tone: {tonePattern || "Not set"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {entry.category ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <X className="w-4 h-4 text-gray-400" />
+                  )}
+                  <span className={entry.category ? "text-green-700" : "text-gray-500"}>
+                    Category: {entry.category || "Not set"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Actions */}
         <div className="flex gap-3 pt-6 border-t border-gray-200">
           <Button onClick={handleSave} disabled={saving} className="flex-1 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700">
@@ -660,10 +894,12 @@ export function VocabularyEditor() {
               </div>
               <div className="text-lg text-gray-700 mb-1">{entry.pinyin}</div>
               <div className="text-sm text-gray-600 mb-3">{entry.english}</div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">{entry.category}</span>
                 <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700">HSK {entry.hskLevel}</span>
                 {entry.rowNum && <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-700 font-mono">#{entry.rowNum}</span>}
+                {pos && <span className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700">{pos}</span>}
+                {tonePattern && <span className="text-xs px-2 py-1 rounded bg-pink-100 text-pink-700 font-mono">{tonePattern}</span>}
               </div>
             </div>
 
