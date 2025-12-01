@@ -13,7 +13,7 @@
   # - font-src 'self': Only allow fonts from same origin
   # - connect-src 'self' https://api.studio.polymasterlabs.com: Allow API connections
   # - frame-ancestors 'none': Prevent embedding in iframes
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.studio.polymasterlabs.com https://*.polymasterlabs.com; media-src 'self' https://content.polymasterlabs.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self';
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.studio.polymasterlabs.com https://*.polymasterlabs.com; media-src 'self' https://content.polymasterlabs.com data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';
 
 # Cache static assets
 /assets/*
