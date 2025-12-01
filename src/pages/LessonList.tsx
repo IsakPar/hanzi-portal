@@ -13,12 +13,13 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   Plus, BookOpen, Star, Clock, Search, ChevronDown, ChevronRight,
-  FolderPlus, Loader2, AlertCircle, Edit
+  FolderPlus, Loader2, AlertCircle, Edit, FileJson
 } from "lucide-react";
 import type { Lesson, LessonType } from "@/types/lesson";
 import type { Unit } from "@/types/unit";
 import { LESSON_TYPE_CONFIG } from "@/types/lesson";
 import { LessonTypeModal } from "@/components/lesson-editor/LessonTypeModal";
+import { LessonImportListModal } from "@/components/lesson-editor/LessonImportListModal";
 import { LessonGroupCard } from "@/components/lessons/LessonGroupCard";
 import { LessonGroupModal, type GroupFormData } from "@/components/lessons/LessonGroupModal";
 import { lessonAPI } from "@/services/lessonAPI";
@@ -44,6 +45,7 @@ export function LessonList() {
   const [typeFilter, setTypeFilter] = useState<LessonType | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showTypeModal, setShowTypeModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [expandedUngrouped, setExpandedUngrouped] = useState(true);
 
   // Group modal state
@@ -191,6 +193,14 @@ export function LessonList() {
         </div>
         <div className="flex items-center gap-3">
           <button 
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-amber-200 text-amber-700 rounded-xl font-medium hover:bg-amber-50 hover:border-amber-300 transition-all"
+            title="Import lesson from JSON"
+          >
+            <FileJson size={18} />
+            Import JSON
+          </button>
+          <button 
             onClick={() => { setEditingGroup(null); setShowGroupModal(true); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-indigo-200 text-indigo-700 rounded-xl font-medium hover:bg-indigo-50 hover:border-indigo-300 transition-all"
           >
@@ -211,6 +221,13 @@ export function LessonList() {
       <LessonTypeModal
         isOpen={showTypeModal}
         onClose={() => setShowTypeModal(false)}
+      />
+
+      {/* Import JSON Modal */}
+      <LessonImportListModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        defaultHskLevel={hskFilter || 1}
       />
 
       {/* Group Modal */}

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Save, Eye, Settings, Loader2 } from "lucide-react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Save, Eye, Settings, Loader2, FileJson } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BlockLibrary } from "@/components/lesson-editor/BlockLibrary";
 import { LessonFlow } from "@/components/lesson-editor/LessonFlow";
@@ -15,6 +15,7 @@ import { useGlobalConfirm } from "@/hooks/useConfirm";
 import { lessonAPI, type CreateLessonPayload } from "@/services/lessonAPI";
 import { useSaveShortcut, useEscapeKey } from "@/hooks/useKeyboardShortcuts";
 import { useAbortController } from "@/hooks/useAbortController";
+import { LessonImportModal } from "@/components/lesson-editor/LessonImportModal";
 
 // Default structure for a new lesson
 const createNewLesson = (): Lesson => ({
@@ -37,10 +38,12 @@ const createNewLesson = (): Lesson => ({
 
 export function LessonEditor() {
   const { lessonId } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const confirm = useGlobalConfirm();
   const { getSignal } = useAbortController();
   const isNewLesson = !lessonId || lessonId === "new";
+  const shouldImport = searchParams.get('import') === 'true';
 
   // State
   const [lesson, setLesson] = useState<Lesson | null>(null);
@@ -50,13 +53,60 @@ export function LessonEditor() {
   const [loading, setLoading] = useState(!isNewLesson);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
   
   // Ref for save handler (needed for keyboard shortcut)
   const saveHandlerRef = useRef<() => void>(() => {});
 
-  // Load lesson data
+  // Load lesson data (or import from JSON)
   const loadLesson = useCallback(async () => {
     if (isNewLesson) {
+      // Check if we have import data from the list page
+      if (shouldImport) {
+        const importData = sessionStorage.getItem('lesson-import-data');
+        if (importData) {
+          try {
+            const parsed = JSON.parse(importData);
+            
+            // Generate IDs for blocks if missing
+            const blocks: ContentBlock[] = (parsed.blocks || []).map((block: any, index: number) => ({
+              id: block.id || crypto.randomUUID(),
+              type: block.type,
+              orderIndex: index,
+              content: block.content,
+            }));
+
+            const importedLesson: Lesson = {
+              ...createNewLesson(),
+              title: parsed.title || "Imported Lesson",
+              subtitle: parsed.subtitle || "",
+              hskLevel: parsed.hskLevel || Number(searchParams.get('hsk')) || 1,
+              lessonType: parsed.lessonType || (searchParams.get('type') as any) || "lesson",
+              difficulty: parsed.difficulty || "easy",
+              estimatedMinutes: parsed.estimatedMinutes || 15,
+              grammarPoints: parsed.grammarPoints || [],
+              tags: parsed.tags || [],
+              targetVocabulary: parsed.targetVocabulary || [],
+              blocks,
+            };
+
+            setLesson(importedLesson);
+            setIsDirty(true); // Mark as dirty so user knows to save
+            sessionStorage.removeItem('lesson-import-data'); // Clear after use
+            toast.success(
+              "Lesson Imported!",
+              `Loaded ${blocks.length} blocks. Review and save when ready.`
+            );
+            setLoading(false);
+            return;
+          } catch (err) {
+            logger.error("Failed to parse import data:", err);
+            sessionStorage.removeItem('lesson-import-data');
+            // Fall through to create empty lesson
+          }
+        }
+      }
+      
       setLesson(createNewLesson());
       setLoading(false);
       return;
@@ -77,7 +127,7 @@ export function LessonEditor() {
     } finally {
       setLoading(false);
     }
-  }, [lessonId, isNewLesson, getSignal]);
+  }, [lessonId, isNewLesson, shouldImport, searchParams, getSignal]);
 
   useEffect(() => {
     loadLesson();
@@ -158,6 +208,31 @@ export function LessonEditor() {
       if (activeBlockId === blockId) setActiveBlockId(null);
       setIsDirty(true);
     }
+  };
+
+  const handleImportLesson = (importedData: Partial<Lesson>) => {
+    setLesson((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        title: importedData.title || prev.title,
+        subtitle: importedData.subtitle || prev.subtitle,
+        hskLevel: importedData.hskLevel || prev.hskLevel,
+        lessonType: importedData.lessonType || prev.lessonType,
+        difficulty: importedData.difficulty || prev.difficulty,
+        estimatedMinutes: importedData.estimatedMinutes || prev.estimatedMinutes,
+        grammarPoints: importedData.grammarPoints || prev.grammarPoints,
+        tags: importedData.tags || prev.tags,
+        targetVocabulary: importedData.targetVocabulary || prev.targetVocabulary,
+        blocks: importedData.blocks || prev.blocks,
+      };
+    });
+    setIsDirty(true);
+    setActiveBlockId(null);
+    toast.success(
+      "Lesson Imported!",
+      `Imported ${importedData.blocks?.length || 0} blocks. Review and save when ready.`
+    );
   };
 
   const handleSave = useCallback(async () => {
@@ -275,6 +350,15 @@ export function LessonEditor() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowImportModal(true)}
+            title="Import lesson from JSON"
+          >
+            <FileJson size={16} className="mr-2" />
+            Import
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -397,6 +481,14 @@ export function LessonEditor() {
           </div>
         )}
       </div>
+
+      {/* Import Modal */}
+      <LessonImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleImportLesson}
+        currentHskLevel={lesson.hskLevel}
+      />
     </div>
   );
 }
