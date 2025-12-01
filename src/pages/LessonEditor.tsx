@@ -474,7 +474,8 @@ export function LessonEditor() {
                   key={activeBlockId} 
                   block={activeBlock} 
                   onChange={handleUpdateBlock} 
-                  lessonId={lesson.id} 
+                  lessonId={lesson.id}
+                  hskLevel={lesson.hskLevel}
                 />
               </div>
             </div>

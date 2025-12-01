@@ -27,9 +27,10 @@ interface BlockEditorProps {
   block: ContentBlock;
   onChange: (block: ContentBlock) => void;
   lessonId?: string;
+  hskLevel?: number;
 }
 
-export function BlockEditor({ block, onChange, lessonId }: BlockEditorProps) {
+export function BlockEditor({ block, onChange, lessonId, hskLevel = 1 }: BlockEditorProps) {
   // Handler for individual field changes (used by block editors)
   const handleFieldChange = (field: string, value: any) => {
     onChange({ ...block, [field]: value });
@@ -67,7 +68,7 @@ export function BlockEditor({ block, onChange, lessonId }: BlockEditorProps) {
       return <SpeechPracticeV2Editor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "exercise_multiple_choice":
-      return <MultipleChoiceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
+      return <MultipleChoiceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
     
     case "exercise_drag_sentence":
       return <DragSentenceEditor block={block} onChange={handleFieldChange} />;

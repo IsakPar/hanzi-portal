@@ -10,15 +10,18 @@ import { Plus, Trash2, CheckCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
+import { AISuggestButton } from '@/components/ai/AISuggestButton';
+import type { Suggestion } from '@/services/aiSuggestAPI';
 import { cn } from '@/lib/utils';
 
 interface MultipleChoiceEditorProps {
   block: ExerciseMultipleChoiceBlock;
   onChange: (field: string, value: any) => void;
   lessonId?: string;
+  hskLevel?: number;
 }
 
-export function MultipleChoiceEditor({ block, onChange, lessonId = '' }: MultipleChoiceEditorProps) {
+export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel = 1 }: MultipleChoiceEditorProps) {
   // Default empty array for options if undefined
   const [options, setOptions] = useState(block.content.options || []);
 
@@ -46,6 +49,22 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '' }: Multipl
     newOptions[index] = { ...newOptions[index], audioUrl: undefined };
     updateOptions(newOptions);
   };
+
+  const handleSuggestionSelect = (index: number, suggestion: Suggestion) => {
+    const newOptions = [...options];
+    newOptions[index] = { 
+      ...newOptions[index], 
+      text: suggestion.text,
+      audioUrl: undefined, // Reset audio when text changes
+    };
+    updateOptions(newOptions);
+  };
+
+  // Get the correct answer for context
+  const correctAnswer = options.find(o => o.isCorrect)?.text || '';
+  
+  // Get all current option texts for exclusion
+  const excludeTexts = options.map(o => o.text).filter(Boolean);
 
   return (
     <div className="space-y-4">
@@ -96,6 +115,18 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '' }: Multipl
                 onAudioRemoved={() => handleAudioRemoved(index)}
                 disabled={!lessonId}
               />
+              
+              {/* AI Suggest for wrong options */}
+              {!option.isCorrect && correctAnswer && (
+                <AISuggestButton
+                  context="mcq-wrong-option"
+                  correctAnswer={correctAnswer}
+                  hskLevel={hskLevel}
+                  exclude={excludeTexts}
+                  count={5}
+                  onSelect={(suggestion) => handleSuggestionSelect(index, suggestion)}
+                />
+              )}
               
               <button
                 onClick={() => {
