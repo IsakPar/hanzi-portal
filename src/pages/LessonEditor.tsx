@@ -451,7 +451,12 @@ export function LessonEditor() {
             {/* Panel Content - Scrollable */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="p-5">
-                <BlockEditor block={activeBlock} onChange={handleUpdateBlock} lessonId={lesson.id} />
+                <BlockEditor 
+                  key={activeBlockId} 
+                  block={activeBlock} 
+                  onChange={handleUpdateBlock} 
+                  lessonId={lesson.id} 
+                />
               </div>
             </div>
           </div>
