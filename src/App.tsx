@@ -42,6 +42,7 @@ const UserManagement = lazy(() => import("./pages/UserManagement").then(m => ({ 
 const ControlCenter = lazy(() => import("./pages/ControlCenter"));
 const RateLimits = lazy(() => import("./pages/RateLimits"));
 const SubscriptionsPage = lazy(() => import("./pages/SubscriptionsPage"));
+const PerformancePage = lazy(() => import("./pages/PerformancePage"));
 
 /**
  * Page loading fallback component
@@ -119,6 +120,7 @@ function AppContent() {
           <Route path="control-center" element={<AdminGuard><Suspense fallback={<PageLoader />}><ControlCenter /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
           <Route path="rate-limits" element={<AdminGuard><Suspense fallback={<PageLoader />}><RateLimits /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
           <Route path="subscriptions" element={<AdminGuard><Suspense fallback={<PageLoader />}><SubscriptionsPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
+          <Route path="performance" element={<AdminGuard><Suspense fallback={<PageLoader />}><PerformancePage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
         </Route>
 
         {/* Standalone routes (Full screen editors) - PROTECTED with AIAssistantProvider */}
