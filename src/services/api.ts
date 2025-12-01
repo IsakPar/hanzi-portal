@@ -15,8 +15,11 @@ import { getAccessToken, refreshAccessToken } from '@/lib/authClient';
 // Direct API URL - no proxy needed with token auth
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.studio.polymasterlabs.com';
 
+// CDN URL for static content (R2 bucket)
+const CDN_BASE_URL = import.meta.env.VITE_CDN_URL || 'https://content.polymasterlabs.com';
+
 // Export for use in other files
-export { API_BASE_URL };
+export { API_BASE_URL, CDN_BASE_URL };
 
 // API Response wrapper type
 export interface APIResponse<T> {

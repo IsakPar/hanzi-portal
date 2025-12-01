@@ -25,6 +25,7 @@ import {
 } from "@/services/vocabularyAPI";
 import { toast } from "@/hooks/useToast";
 import { processAudioAtSpeed } from "@/utils/audioProcessor";
+import { CDN_BASE_URL } from "@/services/api";
 
 // Voice options for ElevenLabs
 const VOICES = [
@@ -448,7 +449,7 @@ export function VocabularyEditor() {
                   <CheckCircle2 className="w-4 h-4 text-green-600" />
                   <span className="text-sm text-green-700">Audio saved</span>
                   <audio controls className="h-8 flex-1">
-                    <source src={`https://content.hanzimaster.com/${entry.wordAudioR2Key}`} />
+                    <source src={`${CDN_BASE_URL}/${entry.wordAudioR2Key}`} />
                   </audio>
                 </div>
               )}
@@ -564,7 +565,7 @@ export function VocabularyEditor() {
                     <CheckCircle2 className="w-4 h-4 text-green-600" />
                     <span className="text-sm text-green-700">Audio saved</span>
                     <audio controls className="h-8 flex-1">
-                      <source src={`https://content.hanzimaster.com/${entry.exampleAudioR2Key}`} />
+                      <source src={`${CDN_BASE_URL}/${entry.exampleAudioR2Key}`} />
                     </audio>
                   </div>
                 )}

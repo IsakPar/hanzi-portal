@@ -750,7 +750,7 @@ function AnnouncementEditor({ templates, announcement, onClose, onSave }: {
                     </div>
                     <div>
                       <Label>Icon URL (or Emoji below)</Label>
-                      <Input value={formData.uiSchema.content.iconUrl || ''} onChange={(e) => updateSchema('content.iconUrl', e.target.value)} placeholder="https://content.hanzimaster.com/icons/..." />
+                      <Input value={formData.uiSchema.content.iconUrl || ''} onChange={(e) => updateSchema('content.iconUrl', e.target.value)} placeholder="https://content.polymasterlabs.com/icons/..." />
                     </div>
                     <div>
                       <Label>Emoji Fallback</Label>

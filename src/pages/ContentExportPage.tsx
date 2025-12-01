@@ -77,7 +77,7 @@ export function ContentExportPage() {
       const exportResult = await exportVocabularyJSON(response.results, hskLevel, '1.0.0');
 
       // Note: R2 upload would require backend endpoint - exports work via local download for now
-      const url = `https://content.hanzimaster.com/vocabulary/hsk${hskLevel}.json`;
+      const url = `https://content.polymasterlabs.com/vocabulary/hsk${hskLevel}.json`;
 
       updateStatus(hskLevel, 'vocabulary', {
         status: 'success',
@@ -103,7 +103,7 @@ export function ContentExportPage() {
       const response = await lessonAPI.getAll({ hskLevel });
       const exportResult = await exportLessonsJSON(response.lessons, hskLevel, '1.0.0');
 
-      const url = `https://content.hanzimaster.com/lessons/hsk${hskLevel}.json`;
+      const url = `https://content.polymasterlabs.com/lessons/hsk${hskLevel}.json`;
 
       updateStatus(hskLevel, 'lessons', {
         status: 'success',
@@ -149,7 +149,7 @@ export function ContentExportPage() {
         '1.0.0'
       );
 
-      const url = `https://content.hanzimaster.com/stories/${accessTier}/hsk${hskLevel}.json`;
+      const url = `https://content.polymasterlabs.com/stories/${accessTier}/hsk${hskLevel}.json`;
 
       updateStatus(hskLevel, key, {
         status: 'success',
@@ -191,7 +191,7 @@ export function ContentExportPage() {
       // Generate manifest
       setManifestStatus({ status: 'loading' });
       const manifestResult = await exportManifest(allExports);
-      const manifestUrl = 'https://content.hanzimaster.com/manifest.json';
+      const manifestUrl = 'https://content.polymasterlabs.com/manifest.json';
       
       setManifestStatus({
         status: 'success',
