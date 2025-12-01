@@ -9,7 +9,7 @@
  * Matches the UX from VocabularyEditor
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Volume2, Loader2, CheckCircle2, Play, Pause, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -76,13 +76,22 @@ export function ElevenLabsGenerator({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPlayingSaved, setIsPlayingSaved] = useState(false);
+  const [justSavedUrl, setJustSavedUrl] = useState<string | null>(null); // Track URL we just saved
   
   // Ref for saved audio playback
   const savedAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Determine current state
+  // Clear justSavedUrl when the prop updates (parent confirmed the save)
+  useEffect(() => {
+    if (savedAudioUrl && justSavedUrl) {
+      setJustSavedUrl(null);
+    }
+  }, [savedAudioUrl, justSavedUrl]);
+
+  // Determine current state - use justSavedUrl as fallback while waiting for prop update
   const hasText = !!text?.trim();
-  const hasSavedAudio = !!savedAudioUrl;
+  const effectiveSavedUrl = savedAudioUrl || justSavedUrl;
+  const hasSavedAudio = !!effectiveSavedUrl;
   const hasPreview = !!previewBase64;
 
   /**
@@ -134,6 +143,9 @@ export function ElevenLabsGenerator({
         estimatedDurationMs
       );
       
+      // Store the URL locally so we can display it while waiting for parent to update
+      setJustSavedUrl(result.audioUrl);
+      
       // Clear preview and notify parent
       setPreviewBase64(null);
       onSaved(result.audioUrl, result.audioDurationMs || 0);
@@ -159,6 +171,7 @@ export function ElevenLabsGenerator({
   const handleDelete = () => {
     onDeleted();
     setIsPlayingSaved(false);
+    setJustSavedUrl(null); // Clear local URL on delete
   };
 
   /**
@@ -247,7 +260,7 @@ export function ElevenLabsGenerator({
           {/* Hidden audio element for playback */}
           <audio 
             ref={savedAudioRef} 
-            src={savedAudioUrl}
+            src={effectiveSavedUrl!}
             onEnded={() => setIsPlayingSaved(false)} 
           />
           
