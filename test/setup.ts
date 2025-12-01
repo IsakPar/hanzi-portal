@@ -3,7 +3,7 @@ import { vi } from 'vitest'
 
 // Mock environment variables
 process.env.VITE_API_URL = 'https://hanzimaster-backend-v2.isak-parild.workers.dev'
-process.env.VITE_CDN_URL = 'https://cdn.hanzimaster.com'
+process.env.VITE_CDN_URL = 'https://content.polymasterlabs.com'
 
 // Mock localStorage
 const localStorageMock = {
