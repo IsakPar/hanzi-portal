@@ -9,14 +9,16 @@ import type { ExerciseMultipleChoiceBlock } from '@/types/lesson';
 import { Plus, Trash2, CheckCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 import { cn } from '@/lib/utils';
 
 interface MultipleChoiceEditorProps {
   block: ExerciseMultipleChoiceBlock;
   onChange: (field: string, value: any) => void;
+  lessonId?: string;
 }
 
-export function MultipleChoiceEditor({ block, onChange }: MultipleChoiceEditorProps) {
+export function MultipleChoiceEditor({ block, onChange, lessonId = '' }: MultipleChoiceEditorProps) {
   // Default empty array for options if undefined
   const [options, setOptions] = useState(block.content.options || []);
 
@@ -31,6 +33,18 @@ export function MultipleChoiceEditor({ block, onChange }: MultipleChoiceEditorPr
   const updateOptions = (newOptions: any[]) => {
     setOptions(newOptions);
     updateContent('options', newOptions);
+  };
+
+  const handleAudioSaved = (index: number, audioUrl: string) => {
+    const newOptions = [...options];
+    newOptions[index] = { ...newOptions[index], audioUrl };
+    updateOptions(newOptions);
+  };
+
+  const handleAudioRemoved = (index: number) => {
+    const newOptions = [...options];
+    newOptions[index] = { ...newOptions[index], audioUrl: undefined };
+    updateOptions(newOptions);
   };
 
   return (
@@ -50,7 +64,7 @@ export function MultipleChoiceEditor({ block, onChange }: MultipleChoiceEditorPr
           Answer Options <span className="text-destructive">*</span>
         </Label>
         <p className="text-xs text-muted-foreground">
-          Add 3-4 options (one must be correct)
+          Add 3-4 options (one must be correct). Chinese options show audio status.
         </p>
         
         <div className="space-y-3">
@@ -70,6 +84,18 @@ export function MultipleChoiceEditor({ block, onChange }: MultipleChoiceEditorPr
                   )}
                 />
               </div>
+              
+              {/* Audio status for Chinese text */}
+              <InlineAudioStatus
+                text={option.text}
+                audioUrl={option.audioUrl}
+                lessonId={lessonId || 'draft'}
+                blockId={block.id}
+                optionId={option.id || `opt-${index}`}
+                onAudioSaved={(url) => handleAudioSaved(index, url)}
+                onAudioRemoved={() => handleAudioRemoved(index)}
+                disabled={!lessonId}
+              />
               
               <button
                 onClick={() => {

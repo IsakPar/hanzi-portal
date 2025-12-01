@@ -109,6 +109,7 @@ export interface ExerciseMultipleChoiceBlock extends BaseBlock {
       id: string;
       text: string;
       isCorrect: boolean;
+      audioUrl?: string; // ElevenLabs generated audio for this option
     }>;
     explanation?: string;
   };

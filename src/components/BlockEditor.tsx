@@ -67,7 +67,7 @@ export function BlockEditor({ block, onChange, lessonId }: BlockEditorProps) {
       return <SpeechPracticeV2Editor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "exercise_multiple_choice":
-      return <MultipleChoiceEditor block={block} onChange={handleFieldChange} />;
+      return <MultipleChoiceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "exercise_drag_sentence":
       return <DragSentenceEditor block={block} onChange={handleFieldChange} />;
