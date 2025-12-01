@@ -13,16 +13,14 @@ import {
   Clock, 
   Zap, 
   BarChart3,
-  ExternalLink,
   RefreshCw,
   HelpCircle
 } from 'lucide-react';
 import { 
   getK6Summary, 
   listK6Results, 
-  K6DashboardSummary, 
-  K6ResultListItem 
 } from '@/services/k6API';
+import type { K6DashboardSummary, K6ResultListItem } from '@/services/k6API';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Components
@@ -51,7 +49,7 @@ function MetricCard({
   value, 
   unit, 
   icon: Icon, 
-  trend,
+  trend: _trend,
   color = 'slate'
 }: { 
   title: string; 
@@ -352,10 +350,10 @@ export function PerformancePage() {
         />
         <MetricCard
           title="Error Rate"
-          value={latestSmoke?.error_rate !== null ? (latestSmoke.error_rate * 100).toFixed(2) : null}
+          value={latestSmoke?.error_rate != null ? (latestSmoke.error_rate * 100).toFixed(2) : null}
           unit="%"
           icon={AlertTriangle}
-          color={latestSmoke?.error_rate && latestSmoke.error_rate > 0.01 ? 'red' : 'emerald'}
+          color={latestSmoke?.error_rate != null && latestSmoke.error_rate > 0.01 ? 'red' : 'emerald'}
         />
         <MetricCard
           title="Total Requests"

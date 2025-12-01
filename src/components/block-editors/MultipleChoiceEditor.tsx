@@ -1,18 +1,26 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * MultipleChoiceEditor - Edit multiple choice exercise properties
+ * 
+ * Features:
+ * - Smart Fill: One-click distractor population using pedagogic strategies
+ * - Per-option AI suggestions via dropdown
+ * - Audio status indicators
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { FormField } from '../shared/FormField';
 import type { ExerciseMultipleChoiceBlock } from '@/types/lesson';
-import { Plus, Trash2, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Zap, Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 import { AISuggestButton } from '@/components/ai/AISuggestButton';
+import { AlternativesPanel } from '@/components/ai/AlternativesPanel';
 import type { Suggestion } from '@/services/aiSuggestAPI';
+import { getDistractors, flattenDistractors, type DistractorResponse } from '@/services/distractorsAPI';
 import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/useToast';
 
 interface MultipleChoiceEditorProps {
   block: ExerciseMultipleChoiceBlock;
@@ -24,6 +32,10 @@ interface MultipleChoiceEditorProps {
 export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel = 1 }: MultipleChoiceEditorProps) {
   // Default empty array for options if undefined
   const [options, setOptions] = useState(block.content.options || []);
+  const [smartFillLoading, setSmartFillLoading] = useState(false);
+  const [showAlternatives, setShowAlternatives] = useState<number | null>(null);
+  const [alternativesData, setAlternativesData] = useState<DistractorResponse | null>(null);
+  const [alternativesLoading, setAlternativesLoading] = useState(false);
 
   // Helper to update nested content
   const updateContent = (field: string, value: any) => {
@@ -66,6 +78,114 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
   // Get all current option texts for exclusion
   const excludeTexts = options.map(o => o.text).filter(Boolean);
 
+  /**
+   * Smart Fill - Auto-populate empty wrong options with pedagogic distractors
+   */
+  const handleSmartFill = useCallback(async () => {
+    if (!correctAnswer) {
+      toast.error('Need correct answer', 'Enter the correct answer first');
+      return;
+    }
+
+    setSmartFillLoading(true);
+    try {
+      const response = await getDistractors({
+        word: correctAnswer,
+        maxHskLevel: hskLevel,
+        count: 10,
+      });
+
+      // Get flattened, prioritized distractors
+      const allDistractors = flattenDistractors(response.distractors);
+      
+      // Filter out existing options
+      const existingTexts = new Set(options.map(o => o.text?.toLowerCase()).filter(Boolean));
+      const available = allDistractors.filter(d => !existingTexts.has(d.hanzi.toLowerCase()));
+
+      if (available.length === 0) {
+        toast.info('No new distractors', 'All available alternatives are already used');
+        return;
+      }
+
+      // Fill empty wrong options
+      let distractorIndex = 0;
+      const newOptions = options.map((opt) => {
+        // Skip correct answer or already filled options
+        if (opt.isCorrect || opt.text) return opt;
+        
+        // Get next distractor
+        const distractor = available[distractorIndex];
+        if (!distractor) return opt;
+        
+        distractorIndex++;
+        return {
+          ...opt,
+          text: distractor.hanzi,
+          audioUrl: undefined,
+        };
+      });
+
+      updateOptions(newOptions);
+      toast.success('Smart Fill complete', `Added ${distractorIndex} distractors`);
+    } catch (err) {
+      toast.error('Smart Fill failed', (err as Error).message);
+    } finally {
+      setSmartFillLoading(false);
+    }
+  }, [correctAnswer, hskLevel, options, updateOptions]);
+
+  /**
+   * Show alternatives panel for a specific option
+   */
+  const handleShowAlternatives = useCallback(async (index: number) => {
+    if (showAlternatives === index) {
+      setShowAlternatives(null);
+      setAlternativesData(null);
+      return;
+    }
+
+    const optionText = options[index]?.text || correctAnswer;
+    if (!optionText) {
+      toast.info('Enter text first', 'Enter some text to see alternatives');
+      return;
+    }
+
+    setShowAlternatives(index);
+    setAlternativesLoading(true);
+    setAlternativesData(null);
+
+    try {
+      const response = await getDistractors({
+        word: optionText,
+        maxHskLevel: hskLevel,
+        count: 20,
+      });
+      setAlternativesData(response);
+    } catch (err) {
+      toast.error('Failed to load alternatives', (err as Error).message);
+      setShowAlternatives(null);
+    } finally {
+      setAlternativesLoading(false);
+    }
+  }, [showAlternatives, options, correctAnswer, hskLevel]);
+
+  /**
+   * Handle selecting an alternative from the panel
+   */
+  const handleAlternativeSelect = useCallback((word: string) => {
+    if (showAlternatives === null) return;
+    
+    const newOptions = [...options];
+    newOptions[showAlternatives] = {
+      ...newOptions[showAlternatives],
+      text: word,
+      audioUrl: undefined,
+    };
+    updateOptions(newOptions);
+    setShowAlternatives(null);
+    setAlternativesData(null);
+  }, [showAlternatives, options, updateOptions]);
+
   return (
     <div className="space-y-4">
       <FormField
@@ -79,16 +199,46 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
 
       {/* Options */}
       <div className="space-y-2">
-        <Label>
-          Answer Options <span className="text-destructive">*</span>
-        </Label>
-        <p className="text-xs text-muted-foreground">
-          Add 3-4 options (one must be correct). Chinese options show audio status.
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>
+              Answer Options <span className="text-destructive">*</span>
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Add 3-4 options (one must be correct)
+            </p>
+          </div>
+          
+          {/* Smart Fill Button */}
+          <button
+            onClick={handleSmartFill}
+            disabled={!correctAnswer || smartFillLoading}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all",
+              correctAnswer && !smartFillLoading
+                ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 shadow-sm hover:shadow"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            )}
+            title="Auto-fill empty wrong options with smart distractors"
+          >
+            {smartFillLoading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Filling...
+              </>
+            ) : (
+              <>
+                <Zap size={14} />
+                Smart Fill
+              </>
+            )}
+          </button>
+        </div>
         
         <div className="space-y-3">
           {options.map((option, index) => (
-            <div key={option.id || index} className="flex gap-2 items-center">
+            <div key={option.id || index} className="space-y-2">
+              <div className="flex gap-2 items-center">
               <div className="flex-1 relative">
                 <Input
                   value={option.text}
@@ -116,7 +266,21 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
                 disabled={!lessonId}
               />
               
-              {/* AI Suggest for wrong options */}
+              {/* Alternatives button - show categorized alternatives */}
+              <button
+                onClick={() => handleShowAlternatives(index)}
+                className={cn(
+                  "p-2 rounded-md transition-colors text-sm",
+                  showAlternatives === index
+                    ? "bg-purple-100 text-purple-700"
+                    : "text-gray-400 hover:text-purple-600 hover:bg-purple-50"
+                )}
+                title="Show categorized alternatives"
+              >
+                <Zap size={16} />
+              </button>
+              
+              {/* Legacy AI Suggest for wrong options (fallback) */}
               {!option.isCorrect && correctAnswer && (
                 <AISuggestButton
                   context="mcq-wrong-option"
@@ -154,7 +318,30 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
               >
                 <Trash2 size={18} />
               </button>
-            </div>
+              </div>
+            
+              {/* Alternatives Panel - appears below this option */}
+            {showAlternatives === index && (
+              <div className="ml-0 mt-2">
+                {alternativesLoading ? (
+                  <div className="flex items-center gap-2 text-gray-500 text-sm p-4 bg-gray-50 rounded-lg">
+                    <Loader2 size={16} className="animate-spin" />
+                    Loading alternatives...
+                  </div>
+                ) : alternativesData ? (
+                  <AlternativesPanel
+                    source={alternativesData.source}
+                    distractors={alternativesData.distractors}
+                    onSelect={handleAlternativeSelect}
+                    onClose={() => {
+                      setShowAlternatives(null);
+                      setAlternativesData(null);
+                    }}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
           ))}
           
           <button
