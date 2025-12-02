@@ -2,14 +2,14 @@
  * AnalyticsTabs Component
  * Tab navigation for the analytics dashboard
  * 
- * 78 LOC
+ * Note: AI tabs have been moved to Control Center → AI Usage
  */
 
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Users, BookOpen, Cpu, DollarSign, Activity, Target, MessageCircle, BookMarked } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, DollarSign, Activity, Target, BookMarked } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type AnalyticsTab = 'overview' | 'users' | 'content' | 'exercises' | 'stories' | 'ai' | 'ai-tutor' | 'revenue' | 'performance';
+export type AnalyticsTab = 'overview' | 'users' | 'content' | 'exercises' | 'stories' | 'revenue' | 'performance';
 
 interface TabConfig {
   id: AnalyticsTab;
@@ -48,18 +48,6 @@ const TABS: TabConfig[] = [
     label: 'Exercises',
     icon: Target,
     description: 'Success rates by exercise type',
-  },
-  {
-    id: 'ai-tutor',
-    label: 'AI Tutor',
-    icon: MessageCircle,
-    description: 'Conversation sessions & topics',
-  },
-  {
-    id: 'ai',
-    label: 'AI Costs',
-    icon: Cpu,
-    description: 'Model usage & costs',
   },
   {
     id: 'revenue',

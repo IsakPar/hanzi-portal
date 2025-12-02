@@ -2,7 +2,7 @@
  * Analytics Dashboard Page
  * Comprehensive analytics with tabbed navigation
  * 
- * 104 LOC
+ * Note: AI usage analytics have been moved to Control Center → AI Usage tab
  */
 
 import { useState } from "react";
@@ -17,8 +17,6 @@ import {
   ContentTab,
   ExercisesTab,
   StoriesTab,
-  AITutorTab,
-  AITab,
   RevenueTab,
   PerformanceTab,
 } from "@/components/analytics";
@@ -47,10 +45,6 @@ export function AnalyticsDashboard() {
         return <ExercisesTab {...props} />;
       case 'stories':
         return <StoriesTab {...props} />;
-      case 'ai-tutor':
-        return <AITutorTab {...props} />;
-      case 'ai':
-        return <AITab {...props} />;
       case 'revenue':
         return <RevenueTab {...props} />;
       case 'performance':
@@ -70,7 +64,7 @@ export function AnalyticsDashboard() {
               Analytics Dashboard
             </h1>
             <p className="text-gray-600 mt-1">
-              Monitor users, content, AI usage, revenue, and performance
+              Monitor users, content, revenue, and performance
             </p>
           </div>
           <div className="flex items-center gap-3">
