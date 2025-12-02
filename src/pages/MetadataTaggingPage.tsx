@@ -106,12 +106,12 @@ export function MetadataTaggingPage() {
       params.set('limit', '500'); // Get more for filtering
       if (hskFilter) params.set('hsk_level', hskFilter.toString());
       
-      const response = await api.get<{ entries: VocabWithMeta[]; total: number }>(
+      const response = await api.get<{ results: VocabWithMeta[]; total: number }>(
         `/v1/vocabulary?${params.toString()}`
       );
       
       // Apply filter
-      let filtered = response.entries;
+      let filtered = response.results || [];
       if (filterMode === 'missing-pos') {
         filtered = filtered.filter(v => !v.pos);
       } else if (filterMode === 'missing-tone') {
