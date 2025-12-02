@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Gauge, Smartphone, RefreshCw, Trash2, Plus, BookOpen, BookText, AlertCircle, X, Megaphone, Zap, Copy, Eye, Code } from 'lucide-react';
+import { Gauge, Smartphone, RefreshCw, Trash2, Plus, BookOpen, BookText, AlertCircle, X, Megaphone, Zap, Copy, Eye, Code, FlaskConical, Play, CheckCircle2, XCircle, Clock, Loader2 } from 'lucide-react';
 import { api } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -166,7 +166,43 @@ interface TutorUsageSummary {
   recentLessons: TutorRecentLesson[];
 }
 
-type Tab = 'content' | 'devices' | 'announcements' | 'ai-usage';
+// Test Lab types
+interface TestStep {
+  timestamp: string;
+  step: string;
+  status: 'pending' | 'running' | 'success' | 'error' | 'skipped';
+  message: string;
+  durationMs?: number;
+  cost?: number;
+  details?: Record<string, unknown>;
+}
+
+interface TestResult {
+  success: boolean;
+  lesson?: unknown;
+  steps: TestStep[];
+  summary: {
+    totalDurationMs: number;
+    totalCost: number;
+    cacheHit: boolean;
+    cacheKey?: string;
+    preFilterScore?: number;
+    preFilterPassed?: boolean;
+    attemptsReading: number;
+    attemptsPractice: number;
+    attemptsGrammar: number;
+  };
+  error?: string;
+}
+
+interface CacheStats {
+  totalEntries: number;
+  totalHits: number;
+  hitRate: number;
+  estimatedSavings: number;
+}
+
+type Tab = 'content' | 'devices' | 'announcements' | 'ai-usage' | 'test-lab';
 
 // ═══════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -202,9 +238,19 @@ export default function ControlCenter() {
   const [aiTimePeriod, setAiTimePeriod] = useState<'7' | '30' | '90' | '0'>('0'); // 0 = all time
   const [tutorSummary, setTutorSummary] = useState<TutorUsageSummary | null>(null);
 
+  // Test Lab state
+  const [testLabHskLevel, setTestLabHskLevel] = useState(1);
+  const [testLabPosition, setTestLabPosition] = useState(15);
+  const [testLabFocusWords, setTestLabFocusWords] = useState('学习,中文');
+  const [testLabBypassCache, setTestLabBypassCache] = useState(false);
+  const [testLabRunning, setTestLabRunning] = useState(false);
+  const [testLabResult, setTestLabResult] = useState<TestResult | null>(null);
+  const [testLabCacheStats, setTestLabCacheStats] = useState<CacheStats | null>(null);
+  const [testLabSuggestedWords, setTestLabSuggestedWords] = useState<string[][]>([]);
+
   useEffect(() => {
     fetchData();
-  }, [activeTab, aiTimePeriod]);
+  }, [activeTab, aiTimePeriod, testLabHskLevel]);
 
   async function fetchData() {
     setLoading(true);
@@ -246,6 +292,15 @@ export default function ControlCenter() {
         setDailyByProvider(data.dailyByProvider || []);
         setProviders(data.providers || {});
         setTutorSummary(tutorData || null);
+      }
+      
+      if (activeTab === 'test-lab') {
+        const [cacheData, suggestionsData] = await Promise.all([
+          api.get<{ success: boolean; stats: CacheStats }>('/v1/ai-tutor-test/cache-stats'),
+          api.get<{ success: boolean; suggestions: string[][] }>(`/v1/ai-tutor-test/suggested-words?hskLevel=${testLabHskLevel}`),
+        ]);
+        setTestLabCacheStats(cacheData.stats || null);
+        setTestLabSuggestedWords(suggestionsData.suggestions || []);
       }
     } catch (err) {
       setError('Failed to load data');
@@ -326,11 +381,49 @@ export default function ControlCenter() {
 
   const totalStaged = stagedLessons.length + stagedStories.length;
 
+  // Test Lab function
+  async function runTestLabTest() {
+    setTestLabRunning(true);
+    setTestLabResult(null);
+    try {
+      const focusWords = testLabFocusWords.split(',').map(w => w.trim()).filter(Boolean);
+      const result = await api.post<TestResult>('/v1/ai-tutor-test/run', {
+        hskLevel: testLabHskLevel,
+        lessonPosition: testLabPosition,
+        focusWords,
+        options: {
+          bypassCache: testLabBypassCache,
+        },
+      });
+      setTestLabResult(result);
+      // Refresh cache stats after test
+      const cacheData = await api.get<{ success: boolean; stats: CacheStats }>('/v1/ai-tutor-test/cache-stats');
+      setTestLabCacheStats(cacheData.stats || null);
+    } catch (err) {
+      setTestLabResult({
+        success: false,
+        steps: [],
+        summary: {
+          totalDurationMs: 0,
+          totalCost: 0,
+          cacheHit: false,
+          attemptsReading: 0,
+          attemptsPractice: 0,
+          attemptsGrammar: 0,
+        },
+        error: err instanceof Error ? err.message : 'Test failed',
+      });
+    } finally {
+      setTestLabRunning(false);
+    }
+  }
+
   const tabs = [
     { id: 'content' as Tab, label: 'Content Pipeline', icon: BookOpen },
     { id: 'devices' as Tab, label: 'Test Devices', icon: Smartphone },
     { id: 'announcements' as Tab, label: 'Announcements', icon: Megaphone },
     { id: 'ai-usage' as Tab, label: 'AI Usage', icon: Zap },
+    { id: 'test-lab' as Tab, label: 'Test Lab', icon: FlaskConical },
   ];
 
   return (
@@ -433,6 +526,25 @@ export default function ControlCenter() {
           loading={loading}
           timePeriod={aiTimePeriod}
           setTimePeriod={setAiTimePeriod}
+        />
+      )}
+
+      {activeTab === 'test-lab' && (
+        <TestLabTab
+          hskLevel={testLabHskLevel}
+          setHskLevel={setTestLabHskLevel}
+          position={testLabPosition}
+          setPosition={setTestLabPosition}
+          focusWords={testLabFocusWords}
+          setFocusWords={setTestLabFocusWords}
+          bypassCache={testLabBypassCache}
+          setBypassCache={setTestLabBypassCache}
+          running={testLabRunning}
+          result={testLabResult}
+          cacheStats={testLabCacheStats}
+          suggestedWords={testLabSuggestedWords}
+          onRunTest={runTestLabTest}
+          loading={loading}
         />
       )}
     </div>
@@ -1764,6 +1876,290 @@ function TemplateManager({ templates, onClose, onUpdate }: {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEST LAB TAB
+// ═══════════════════════════════════════════════════════════
+
+function TestLabTab({
+  hskLevel,
+  setHskLevel,
+  position,
+  setPosition,
+  focusWords,
+  setFocusWords,
+  bypassCache,
+  setBypassCache,
+  running,
+  result,
+  cacheStats,
+  suggestedWords,
+  onRunTest,
+  loading,
+}: {
+  hskLevel: number;
+  setHskLevel: (v: number) => void;
+  position: number;
+  setPosition: (v: number) => void;
+  focusWords: string;
+  setFocusWords: (v: string) => void;
+  bypassCache: boolean;
+  setBypassCache: (v: boolean) => void;
+  running: boolean;
+  result: TestResult | null;
+  cacheStats: CacheStats | null;
+  suggestedWords: string[][];
+  onRunTest: () => void;
+  loading: boolean;
+}) {
+  const getStepIcon = (status: TestStep['status']) => {
+    switch (status) {
+      case 'success': return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
+      case 'error': return <XCircle className="w-4 h-4 text-red-500" />;
+      case 'running': return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+      case 'skipped': return <Clock className="w-4 h-4 text-gray-400" />;
+      default: return <Clock className="w-4 h-4 text-gray-300" />;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Cache Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-sm font-medium text-gray-500">Cached Lessons</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">
+            {loading ? '...' : cacheStats?.totalEntries || 0}
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-sm font-medium text-gray-500">Total Hits</div>
+          <div className="text-2xl font-bold text-emerald-600 mt-1">
+            {loading ? '...' : cacheStats?.totalHits || 0}
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-sm font-medium text-gray-500">Hit Rate</div>
+          <div className="text-2xl font-bold text-blue-600 mt-1">
+            {loading ? '...' : `${((cacheStats?.hitRate || 0) * 100).toFixed(1)}%`}
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-sm font-medium text-gray-500">Est. Savings</div>
+          <div className="text-2xl font-bold text-amber-600 mt-1">
+            ${loading ? '...' : (cacheStats?.estimatedSavings || 0).toFixed(4)}
+          </div>
+        </div>
+      </div>
+
+      {/* Test Configuration */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <FlaskConical className="w-5 h-5 text-purple-600" />
+          <h3 className="text-lg font-semibold">Test Configuration</h3>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div>
+            <Label>HSK Level</Label>
+            <select
+              value={hskLevel}
+              onChange={(e) => setHskLevel(Number(e.target.value))}
+              className="w-full h-10 border rounded-lg px-3"
+              disabled={running}
+            >
+              {[1, 2, 3, 4, 5, 6].map(level => (
+                <option key={level} value={level}>HSK {level}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label>Lesson Position</Label>
+            <Input
+              type="number"
+              value={position}
+              onChange={(e) => setPosition(Number(e.target.value))}
+              min={1}
+              max={500}
+              disabled={running}
+            />
+          </div>
+          <div>
+            <Label>Focus Words (comma-separated)</Label>
+            <Input
+              value={focusWords}
+              onChange={(e) => setFocusWords(e.target.value)}
+              placeholder="学习,中文"
+              disabled={running}
+            />
+          </div>
+        </div>
+
+        {/* Suggested Words */}
+        {suggestedWords.length > 0 && (
+          <div className="mb-4">
+            <Label className="mb-2 block">Quick Select:</Label>
+            <div className="flex flex-wrap gap-2">
+              {suggestedWords.map((words, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setFocusWords(words.join(','))}
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+                  disabled={running}
+                >
+                  {words.join(', ')}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Options */}
+        <div className="flex items-center gap-4 mb-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={bypassCache}
+              onChange={(e) => setBypassCache(e.target.checked)}
+              disabled={running}
+              className="w-4 h-4 rounded border-gray-300"
+            />
+            <span className="text-sm">Bypass cache (force generation)</span>
+          </label>
+        </div>
+
+        {/* Run Button */}
+        <Button
+          onClick={onRunTest}
+          disabled={running || !focusWords.trim()}
+          className="w-full bg-purple-600 hover:bg-purple-700"
+        >
+          {running ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Running Test...
+            </>
+          ) : (
+            <>
+              <Play className="w-4 h-4 mr-2" />
+              Run Test
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* Results */}
+      {result && (
+        <div className="grid grid-cols-2 gap-6">
+          {/* Live Logs */}
+          <div className="bg-gray-900 rounded-xl p-4 text-sm font-mono">
+            <div className="text-gray-400 mb-3 flex items-center gap-2">
+              <Code className="w-4 h-4" />
+              Live Logs
+            </div>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {result.steps.map((step, idx) => (
+                <div key={idx} className="flex items-start gap-2">
+                  {getStepIcon(step.status)}
+                  <div className="flex-1">
+                    <div className="text-gray-300">
+                      <span className="text-gray-500">[{step.durationMs}ms]</span>{' '}
+                      {step.message}
+                    </div>
+                    {step.details && (
+                      <div className="text-gray-500 text-xs mt-0.5">
+                        {JSON.stringify(step.details)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-semibold">Result</h4>
+              {result.success ? (
+                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium flex items-center gap-1">
+                  <CheckCircle2 className="w-4 h-4" /> Success
+                </span>
+              ) : (
+                <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium flex items-center gap-1">
+                  <XCircle className="w-4 h-4" /> Failed
+                </span>
+              )}
+            </div>
+
+            {result.error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {result.error}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-gray-500">Duration</div>
+                <div className="font-bold text-lg">{(result.summary.totalDurationMs / 1000).toFixed(2)}s</div>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-gray-500">Cost</div>
+                <div className="font-bold text-lg">${result.summary.totalCost.toFixed(5)}</div>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-gray-500">Cache</div>
+                <div className="font-bold text-lg">{result.summary.cacheHit ? '✅ HIT' : '❌ MISS'}</div>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-gray-500">Pre-Filter</div>
+                <div className="font-bold text-lg">
+                  {result.summary.preFilterScore !== undefined 
+                    ? `${result.summary.preFilterScore}/100 ${result.summary.preFilterPassed ? '✅' : '❌'}`
+                    : 'N/A'}
+                </div>
+              </div>
+            </div>
+
+            {result.summary.cacheKey && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                <div className="text-blue-600 font-medium">Cache Key</div>
+                <code className="text-blue-800">{result.summary.cacheKey}</code>
+              </div>
+            )}
+
+            {!result.summary.cacheHit && result.success && (
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm">
+                <div className="text-gray-600 mb-2">Attempts</div>
+                <div className="flex gap-4">
+                  <span>Reading: {result.summary.attemptsReading}</span>
+                  <span>Practice: {result.summary.attemptsPractice}</span>
+                  <span>Grammar: {result.summary.attemptsGrammar}</span>
+                </div>
+              </div>
+            )}
+
+            {result.lesson && (
+              <div className="mt-4">
+                <button
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(result.lesson, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, '_blank');
+                  }}
+                  className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  View Full Lesson JSON
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
