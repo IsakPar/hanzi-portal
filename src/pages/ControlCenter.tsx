@@ -2142,7 +2142,7 @@ function TestLabTab({
               </div>
             )}
 
-            {result.lesson && (
+            {result.lesson !== undefined && (
               <div className="mt-4">
                 <button
                   onClick={() => {
