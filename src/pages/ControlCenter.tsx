@@ -248,6 +248,9 @@ export default function ControlCenter() {
   const [testLabCacheStats, setTestLabCacheStats] = useState<CacheStats | null>(null);
   const [testLabSuggestedWords, setTestLabSuggestedWords] = useState<string[][]>([]);
   const [testLabElapsedMs, setTestLabElapsedMs] = useState(0);
+  const [testLabSteps, setTestLabSteps] = useState<TestStep[]>([]);
+  const [testLabRunningCost, setTestLabRunningCost] = useState(0);
+  const [testLabEventSource, setTestLabEventSource] = useState<EventSource | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -382,11 +385,14 @@ export default function ControlCenter() {
 
   const totalStaged = stagedLessons.length + stagedStories.length;
 
-  // Test Lab function
-  async function runTestLabTest() {
+  // Test Lab function - uses SSE for real-time streaming
+  function runTestLabTest() {
+    // Reset state
     setTestLabRunning(true);
     setTestLabResult(null);
+    setTestLabSteps([]);
     setTestLabElapsedMs(0);
+    setTestLabRunningCost(0);
     
     // Start timer
     const startTime = Date.now();
@@ -394,21 +400,70 @@ export default function ControlCenter() {
       setTestLabElapsedMs(Date.now() - startTime);
     }, 100);
     
-    try {
-      const focusWords = testLabFocusWords.split(',').map(w => w.trim()).filter(Boolean);
-      const result = await api.post<TestResult>('/v1/ai-tutor-test/run', {
-        hskLevel: testLabHskLevel,
-        lessonPosition: testLabPosition,
-        focusWords,
-        options: {
-          bypassCache: testLabBypassCache,
+    // Build SSE URL with query params
+    const API_BASE = import.meta.env.VITE_API_URL || 'https://api.studio.polymasterlabs.com';
+    const params = new URLSearchParams({
+      hskLevel: String(testLabHskLevel),
+      lessonPosition: String(testLabPosition),
+      focusWords: testLabFocusWords,
+      bypassCache: String(testLabBypassCache),
+    });
+    
+    // Create EventSource for SSE
+    const eventSource = new EventSource(`${API_BASE}/v1/ai-tutor-test/run-stream?${params}`);
+    setTestLabEventSource(eventSource);
+    
+    // Handle step events (real-time progress)
+    eventSource.addEventListener('step', (event) => {
+      const data = JSON.parse(event.data);
+      setTestLabSteps(prev => [...prev, {
+        timestamp: new Date().toISOString(),
+        step: data.step,
+        status: data.status,
+        message: data.message,
+        durationMs: data.durationMs,
+        cost: data.cost,
+        details: data.details,
+      }]);
+      setTestLabRunningCost(data.totalCost || 0);
+    });
+    
+    // Handle final result
+    eventSource.addEventListener('result', async (event) => {
+      const data = JSON.parse(event.data);
+      clearInterval(interval);
+      eventSource.close();
+      setTestLabEventSource(null);
+      setTestLabRunning(false);
+      
+      setTestLabResult({
+        success: data.success,
+        lesson: data.lesson,
+        steps: [], // Steps are shown separately now
+        summary: {
+          totalDurationMs: data.summary?.totalDurationMs || Date.now() - startTime,
+          totalCost: data.summary?.totalCost || 0,
+          cacheHit: data.lesson?.metadata?.warnings?.some((w: string) => w.includes('cache')) || false,
+          attemptsReading: data.lesson?.metadata?.attempts?.reading || 0,
+          attemptsPractice: data.lesson?.metadata?.attempts?.practice || 0,
+          attemptsGrammar: data.lesson?.metadata?.attempts?.grammarCheck || 0,
         },
+        error: data.error,
       });
-      setTestLabResult(result);
-      // Refresh cache stats after test
-      const cacheData = await api.get<{ success: boolean; stats: CacheStats }>('/v1/ai-tutor-test/cache-stats');
-      setTestLabCacheStats(cacheData.stats || null);
-    } catch (err) {
+      
+      // Refresh cache stats
+      try {
+        const cacheData = await api.get<{ success: boolean; stats: CacheStats }>('/v1/ai-tutor-test/cache-stats');
+        setTestLabCacheStats(cacheData.stats || null);
+      } catch { /* ignore */ }
+    });
+    
+    // Handle errors
+    eventSource.onerror = () => {
+      clearInterval(interval);
+      eventSource.close();
+      setTestLabEventSource(null);
+      setTestLabRunning(false);
       setTestLabResult({
         success: false,
         steps: [],
@@ -420,13 +475,25 @@ export default function ControlCenter() {
           attemptsPractice: 0,
           attemptsGrammar: 0,
         },
-        error: err instanceof Error ? err.message : 'Test failed',
+        error: 'Connection lost - test may still be running on server',
       });
-    } finally {
-      // Stop timer
-      clearInterval(interval);
-      setTestLabRunning(false);
+    };
+  }
+  
+  // Cancel running test
+  function cancelTestLabTest() {
+    if (testLabEventSource) {
+      testLabEventSource.close();
+      setTestLabEventSource(null);
     }
+    setTestLabRunning(false);
+    setTestLabSteps(prev => [...prev, {
+      timestamp: new Date().toISOString(),
+      step: 'cancelled',
+      status: 'error',
+      message: 'Test cancelled by user',
+      durationMs: testLabElapsedMs,
+    }]);
   }
 
   const tabs = [
@@ -555,9 +622,12 @@ export default function ControlCenter() {
           cacheStats={testLabCacheStats}
           suggestedWords={testLabSuggestedWords}
           onRunTest={runTestLabTest}
+          onCancel={cancelTestLabTest}
           loading={loading}
           elapsedMs={testLabElapsedMs}
           tutorSummary={tutorSummary}
+          streamingSteps={testLabSteps}
+          runningCost={testLabRunningCost}
         />
       )}
     </div>
@@ -1911,9 +1981,12 @@ function TestLabTab({
   cacheStats,
   suggestedWords,
   onRunTest,
+  onCancel,
   loading,
   elapsedMs,
   tutorSummary,
+  streamingSteps,
+  runningCost,
 }: {
   hskLevel: number;
   setHskLevel: (v: number) => void;
@@ -1928,9 +2001,12 @@ function TestLabTab({
   cacheStats: CacheStats | null;
   suggestedWords: string[][];
   onRunTest: () => void;
+  onCancel: () => void;
   loading: boolean;
   elapsedMs: number;
   tutorSummary: TutorUsageSummary | null;
+  streamingSteps: TestStep[];
+  runningCost: number;
 }) {
   const getStepIcon = (status: TestStep['status']) => {
     switch (status) {
@@ -2057,57 +2133,67 @@ function TestLabTab({
           </label>
         </div>
 
-        {/* Run Button with Timer */}
+        {/* Run/Cancel Button with Timer and Cost */}
         <div className="flex gap-4">
-          <Button
-            onClick={onRunTest}
-            disabled={running || !focusWords.trim()}
-            className="flex-1 bg-purple-600 hover:bg-purple-700"
-          >
-            {running ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Running Test...
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4 mr-2" />
-                Run Test
-              </>
-            )}
-          </Button>
-          {/* Live Timer */}
-          {(running || result) && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-lg min-w-[120px] justify-center">
-              <Clock className="w-4 h-4 text-gray-500" />
-              <span className="font-mono font-bold text-lg">
-                {running 
-                  ? (elapsedMs / 1000).toFixed(1)
-                  : (result?.summary.totalDurationMs ? (result.summary.totalDurationMs / 1000).toFixed(1) : '0.0')
-                }s
-              </span>
-            </div>
+          {running ? (
+            <Button
+              onClick={onCancel}
+              variant="destructive"
+              className="flex-1"
+            >
+              <XCircle className="w-4 h-4 mr-2" />
+              Cancel Test
+            </Button>
+          ) : (
+            <Button
+              onClick={onRunTest}
+              disabled={!focusWords.trim()}
+              className="flex-1 bg-purple-600 hover:bg-purple-700"
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Run Test
+            </Button>
           )}
+          
+          {/* Live Timer */}
+          <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-lg min-w-[100px] justify-center">
+            <Clock className="w-4 h-4 text-gray-500" />
+            <span className="font-mono font-bold text-lg">
+              {(elapsedMs / 1000).toFixed(1)}s
+            </span>
+          </div>
+          
+          {/* Running Cost */}
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg min-w-[120px] justify-center">
+            <span className="text-amber-600 font-medium">Cost:</span>
+            <span className="font-mono font-bold text-amber-700">
+              ${(running ? runningCost : (result?.summary.totalCost || 0)).toFixed(5)}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Results */}
-      {result && (
+      {/* Results - Show when running OR when we have result */}
+      {(running || result || streamingSteps.length > 0) && (
         <div className="grid grid-cols-2 gap-6">
-          {/* Live Logs */}
+          {/* Live Logs - streams in real-time */}
           <div className="bg-gray-900 rounded-xl p-4 text-sm font-mono">
             <div className="text-gray-400 mb-3 flex items-center gap-2">
               <Code className="w-4 h-4" />
               Live Logs
+              {running && <Loader2 className="w-3 h-3 animate-spin ml-2" />}
             </div>
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {result.steps.map((step, idx) => (
+              {streamingSteps.map((step, idx) => (
                 <div key={idx} className="flex items-start gap-2">
                   {getStepIcon(step.status)}
                   <div className="flex-1">
                     <div className="text-gray-300">
-                      <span className="text-gray-500">[{step.durationMs}ms]</span>{' '}
+                      <span className="text-gray-500">[{((step.durationMs || 0) / 1000).toFixed(1)}s]</span>{' '}
                       {step.message}
+                      {step.cost !== undefined && step.cost > 0 && (
+                        <span className="text-amber-400 ml-2">(+${step.cost.toFixed(5)})</span>
+                      )}
                     </div>
                     {step.details && (
                       <div className="text-gray-500 text-xs mt-0.5">
@@ -2117,6 +2203,12 @@ function TestLabTab({
                   </div>
                 </div>
               ))}
+              {running && streamingSteps.length === 0 && (
+                <div className="text-gray-500 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Connecting to test server...
+                </div>
+              )}
             </div>
           </div>
 
