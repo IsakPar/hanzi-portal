@@ -402,11 +402,16 @@ export default function ControlCenter() {
     
     // Build SSE URL with query params
     const API_BASE = import.meta.env.VITE_API_URL || 'https://api.studio.polymasterlabs.com';
+    
+    // Get auth token - EventSource can't send headers, so pass as query param
+    const token = localStorage.getItem('access_token') || '';
+    
     const params = new URLSearchParams({
       hskLevel: String(testLabHskLevel),
       lessonPosition: String(testLabPosition),
       focusWords: testLabFocusWords,
       bypassCache: String(testLabBypassCache),
+      token, // Auth token for SSE
     });
     
     // Create EventSource for SSE
