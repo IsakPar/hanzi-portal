@@ -247,6 +247,8 @@ export default function ControlCenter() {
   const [testLabResult, setTestLabResult] = useState<TestResult | null>(null);
   const [testLabCacheStats, setTestLabCacheStats] = useState<CacheStats | null>(null);
   const [testLabSuggestedWords, setTestLabSuggestedWords] = useState<string[][]>([]);
+  const [testLabElapsedMs, setTestLabElapsedMs] = useState(0);
+  const [testLabTimerInterval, setTestLabTimerInterval] = useState<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -385,6 +387,15 @@ export default function ControlCenter() {
   async function runTestLabTest() {
     setTestLabRunning(true);
     setTestLabResult(null);
+    setTestLabElapsedMs(0);
+    
+    // Start timer
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      setTestLabElapsedMs(Date.now() - startTime);
+    }, 100);
+    setTestLabTimerInterval(interval);
+    
     try {
       const focusWords = testLabFocusWords.split(',').map(w => w.trim()).filter(Boolean);
       const result = await api.post<TestResult>('/v1/ai-tutor-test/run', {
@@ -404,7 +415,7 @@ export default function ControlCenter() {
         success: false,
         steps: [],
         summary: {
-          totalDurationMs: 0,
+          totalDurationMs: Date.now() - startTime,
           totalCost: 0,
           cacheHit: false,
           attemptsReading: 0,
@@ -414,6 +425,9 @@ export default function ControlCenter() {
         error: err instanceof Error ? err.message : 'Test failed',
       });
     } finally {
+      // Stop timer
+      clearInterval(interval);
+      setTestLabTimerInterval(null);
       setTestLabRunning(false);
     }
   }
@@ -545,6 +559,8 @@ export default function ControlCenter() {
           suggestedWords={testLabSuggestedWords}
           onRunTest={runTestLabTest}
           loading={loading}
+          elapsedMs={testLabElapsedMs}
+          tutorSummary={tutorSummary}
         />
       )}
     </div>
@@ -1899,6 +1915,8 @@ function TestLabTab({
   suggestedWords,
   onRunTest,
   loading,
+  elapsedMs,
+  tutorSummary,
 }: {
   hskLevel: number;
   setHskLevel: (v: number) => void;
@@ -1914,6 +1932,8 @@ function TestLabTab({
   suggestedWords: string[][];
   onRunTest: () => void;
   loading: boolean;
+  elapsedMs: number;
+  tutorSummary: TutorUsageSummary | null;
 }) {
   const getStepIcon = (status: TestStep['status']) => {
     switch (status) {
@@ -1927,8 +1947,8 @@ function TestLabTab({
 
   return (
     <div className="space-y-6">
-      {/* Header with Cache Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* Header with Cache Stats + AI Cost */}
+      <div className="grid grid-cols-5 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-sm font-medium text-gray-500">Cached Lessons</div>
           <div className="text-2xl font-bold text-gray-900 mt-1">
@@ -1948,9 +1968,18 @@ function TestLabTab({
           </div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="text-sm font-medium text-gray-500">Est. Savings</div>
+          <div className="text-sm font-medium text-gray-500">Cache Savings</div>
           <div className="text-2xl font-bold text-amber-600 mt-1">
             ${loading ? '...' : (cacheStats?.estimatedSavings || 0).toFixed(4)}
+          </div>
+        </div>
+        <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
+          <div className="text-sm font-medium text-purple-600">AI Tutor Cost (All Time)</div>
+          <div className="text-2xl font-bold text-purple-700 mt-1">
+            ${loading ? '...' : (tutorSummary?.totalCost || 0).toFixed(4)}
+          </div>
+          <div className="text-xs text-purple-500 mt-1">
+            {tutorSummary?.totalLessons || 0} lessons · ${((tutorSummary?.totalCost || 0) / Math.max(tutorSummary?.totalLessons || 1, 1)).toFixed(5)}/lesson
           </div>
         </div>
       </div>
@@ -2031,24 +2060,38 @@ function TestLabTab({
           </label>
         </div>
 
-        {/* Run Button */}
-        <Button
-          onClick={onRunTest}
-          disabled={running || !focusWords.trim()}
-          className="w-full bg-purple-600 hover:bg-purple-700"
-        >
-          {running ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Running Test...
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4 mr-2" />
-              Run Test
-            </>
+        {/* Run Button with Timer */}
+        <div className="flex gap-4">
+          <Button
+            onClick={onRunTest}
+            disabled={running || !focusWords.trim()}
+            className="flex-1 bg-purple-600 hover:bg-purple-700"
+          >
+            {running ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Running Test...
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4 mr-2" />
+                Run Test
+              </>
+            )}
+          </Button>
+          {/* Live Timer */}
+          {(running || result) && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-lg min-w-[120px] justify-center">
+              <Clock className="w-4 h-4 text-gray-500" />
+              <span className="font-mono font-bold text-lg">
+                {running 
+                  ? (elapsedMs / 1000).toFixed(1)
+                  : (result?.summary.totalDurationMs ? (result.summary.totalDurationMs / 1000).toFixed(1) : '0.0')
+                }s
+              </span>
+            </div>
           )}
-        </Button>
+        </div>
       </div>
 
       {/* Results */}
