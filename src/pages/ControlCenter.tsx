@@ -136,6 +136,7 @@ interface TutorDailyUsage {
   lessons: number;
   cost: number;
   tokens: number;
+  avgLatencyMs: number;
 }
 
 interface TutorRecentLesson {
@@ -145,8 +146,9 @@ interface TutorRecentLesson {
   outputTokens: number;
   cost: number;
   steps: number;
+  latencyMs: number;
   metadata?: {
-    lessonNumber?: number;
+    userLessonPosition?: number;
     hskLevel?: number;
     focusWords?: string[];
   };
@@ -157,6 +159,9 @@ interface TutorUsageSummary {
   totalCost: number;
   avgCostPerLesson: number;
   totalTokens: number;
+  avgLatencyMs: number;
+  totalLatencyMs: number;
+  fallbackRate: number;
   daily: TutorDailyUsage[];
   recentLessons: TutorRecentLesson[];
 }
@@ -1422,6 +1427,12 @@ function AITutorSection({ tutorSummary }: { tutorSummary: TutorUsageSummary }) {
   // Simple chart for tutor daily costs
   const maxDailyCost = Math.max(...tutorSummary.daily.map(d => d.cost), 0.0001);
   
+  // Format latency nicely
+  const formatLatency = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+  
   return (
     <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl border border-violet-200 overflow-hidden">
       <div className="p-5 border-b border-violet-100 flex items-center gap-3">
@@ -1430,27 +1441,56 @@ function AITutorSection({ tutorSummary }: { tutorSummary: TutorUsageSummary }) {
         </div>
         <div>
           <h3 className="font-semibold text-gray-900">AI Tutor Lesson Generation</h3>
-          <p className="text-sm text-gray-500">Qwen-powered adaptive lesson generation</p>
+          <p className="text-sm text-gray-500">Mobile app personalized lessons (Qwen 32B)</p>
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Cards - Row 1: Lessons & Cost */}
       <div className="p-5 grid grid-cols-4 gap-4">
         <div className="bg-white/70 rounded-lg p-4">
           <div className="text-sm font-medium text-gray-500">Total Lessons</div>
           <div className="text-2xl font-bold text-gray-900 mt-1">{tutorSummary.totalLessons}</div>
+          <div className="text-xs text-gray-400 mt-1">Generated for users</div>
         </div>
         <div className="bg-white/70 rounded-lg p-4">
           <div className="text-sm font-medium text-gray-500">Total Cost</div>
           <div className="text-2xl font-bold text-violet-600 mt-1">${tutorSummary.totalCost.toFixed(4)}</div>
+          <div className="text-xs text-gray-400 mt-1">OpenRouter API</div>
         </div>
         <div className="bg-white/70 rounded-lg p-4">
           <div className="text-sm font-medium text-gray-500">Avg Cost/Lesson</div>
-          <div className="text-2xl font-bold text-gray-900 mt-1">${tutorSummary.avgCostPerLesson.toFixed(4)}</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">${tutorSummary.avgCostPerLesson.toFixed(5)}</div>
+          <div className="text-xs text-gray-400 mt-1">~$0.00039 target</div>
         </div>
         <div className="bg-white/70 rounded-lg p-4">
+          <div className="text-sm font-medium text-gray-500">Avg Latency</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">{formatLatency(tutorSummary.avgLatencyMs)}</div>
+          <div className="text-xs text-gray-400 mt-1">AI calls only</div>
+        </div>
+      </div>
+
+      {/* Summary Cards - Row 2: Tokens & Performance */}
+      <div className="px-5 pb-5 grid grid-cols-3 gap-4">
+        <div className="bg-white/70 rounded-lg p-4">
           <div className="text-sm font-medium text-gray-500">Total Tokens</div>
-          <div className="text-2xl font-bold text-gray-900 mt-1">{tutorSummary.totalTokens.toLocaleString()}</div>
+          <div className="text-xl font-bold text-gray-900 mt-1">{tutorSummary.totalTokens.toLocaleString()}</div>
+        </div>
+        <div className="bg-white/70 rounded-lg p-4">
+          <div className="text-sm font-medium text-gray-500">Avg Tokens/Lesson</div>
+          <div className="text-xl font-bold text-gray-900 mt-1">
+            {tutorSummary.totalLessons > 0 
+              ? Math.round(tutorSummary.totalTokens / tutorSummary.totalLessons).toLocaleString() 
+              : 0}
+          </div>
+        </div>
+        <div className="bg-white/70 rounded-lg p-4">
+          <div className="text-sm font-medium text-gray-500">Steps/Lesson</div>
+          <div className="text-xl font-bold text-gray-900 mt-1">
+            {tutorSummary.recentLessons.length > 0 
+              ? (tutorSummary.recentLessons.reduce((sum, l) => sum + l.steps, 0) / tutorSummary.recentLessons.length).toFixed(1)
+              : '-'}
+          </div>
+          <div className="text-xs text-gray-400 mt-1">reading + practice + grammar</div>
         </div>
       </div>
 
@@ -1465,10 +1505,11 @@ function AITutorSection({ tutorSummary }: { tutorSummary: TutorUsageSummary }) {
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center group relative">
                     {/* Tooltip */}
-                    <div className="hidden group-hover:block absolute -top-16 bg-gray-900 text-white text-xs rounded px-2 py-1 z-10 whitespace-nowrap">
+                    <div className="hidden group-hover:block absolute -top-20 bg-gray-900 text-white text-xs rounded px-2 py-1 z-10 whitespace-nowrap">
                       <div className="font-semibold">{day.date}</div>
                       <div>{day.lessons} lesson{day.lessons !== 1 ? 's' : ''}</div>
                       <div>${day.cost.toFixed(4)}</div>
+                      <div>Avg latency: {formatLatency(day.avgLatencyMs)}</div>
                     </div>
                     {/* Bar */}
                     <div 
@@ -1489,7 +1530,7 @@ function AITutorSection({ tutorSummary }: { tutorSummary: TutorUsageSummary }) {
       {tutorSummary.recentLessons.length > 0 && (
         <div className="border-t border-violet-100">
           <div className="p-4 bg-white/50">
-            <div className="text-sm font-medium text-gray-700 mb-3">Recent Lessons</div>
+            <div className="text-sm font-medium text-gray-700 mb-3">Recent User Generations</div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -1497,8 +1538,9 @@ function AITutorSection({ tutorSummary }: { tutorSummary: TutorUsageSummary }) {
                     <th className="text-left py-2 px-3 font-medium">Date</th>
                     <th className="text-left py-2 px-3 font-medium">Focus Words</th>
                     <th className="text-right py-2 px-3 font-medium">HSK</th>
+                    <th className="text-right py-2 px-3 font-medium">Position</th>
                     <th className="text-right py-2 px-3 font-medium">Tokens</th>
-                    <th className="text-right py-2 px-3 font-medium">Steps</th>
+                    <th className="text-right py-2 px-3 font-medium">Latency</th>
                     <th className="text-right py-2 px-3 font-medium">Cost</th>
                   </tr>
                 </thead>
@@ -1509,16 +1551,21 @@ function AITutorSection({ tutorSummary }: { tutorSummary: TutorUsageSummary }) {
                         {new Date(lesson.timestamp).toLocaleDateString()}
                       </td>
                       <td className="py-2 px-3">
-                        {lesson.metadata?.focusWords?.slice(0, 3).join(', ') || '-'}
+                        <span className="font-chinese">
+                          {lesson.metadata?.focusWords?.slice(0, 3).join(', ') || '-'}
+                        </span>
                       </td>
                       <td className="py-2 px-3 text-right">
                         {lesson.metadata?.hskLevel || '-'}
                       </td>
                       <td className="py-2 px-3 text-right">
-                        {(lesson.inputTokens + lesson.outputTokens).toLocaleString()}
+                        L{lesson.metadata?.userLessonPosition || '-'}
                       </td>
                       <td className="py-2 px-3 text-right">
-                        {lesson.steps}
+                        {(lesson.inputTokens + lesson.outputTokens).toLocaleString()}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-500">
+                        {formatLatency(lesson.latencyMs)}
                       </td>
                       <td className="py-2 px-3 text-right text-violet-600 font-medium">
                         ${lesson.cost.toFixed(4)}
@@ -1528,6 +1575,16 @@ function AITutorSection({ tutorSummary }: { tutorSummary: TutorUsageSummary }) {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {tutorSummary.totalLessons === 0 && (
+        <div className="p-8 text-center">
+          <div className="text-gray-500 mb-2">No AI Tutor lessons generated yet</div>
+          <div className="text-sm text-gray-400">
+            Lessons will appear here when users generate them from the mobile app
           </div>
         </div>
       )}
