@@ -248,7 +248,6 @@ export default function ControlCenter() {
   const [testLabCacheStats, setTestLabCacheStats] = useState<CacheStats | null>(null);
   const [testLabSuggestedWords, setTestLabSuggestedWords] = useState<string[][]>([]);
   const [testLabElapsedMs, setTestLabElapsedMs] = useState(0);
-  const [testLabTimerInterval, setTestLabTimerInterval] = useState<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -394,7 +393,6 @@ export default function ControlCenter() {
     const interval = setInterval(() => {
       setTestLabElapsedMs(Date.now() - startTime);
     }, 100);
-    setTestLabTimerInterval(interval);
     
     try {
       const focusWords = testLabFocusWords.split(',').map(w => w.trim()).filter(Boolean);
@@ -427,7 +425,6 @@ export default function ControlCenter() {
     } finally {
       // Stop timer
       clearInterval(interval);
-      setTestLabTimerInterval(null);
       setTestLabRunning(false);
     }
   }
