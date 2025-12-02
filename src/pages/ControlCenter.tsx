@@ -2212,22 +2212,28 @@ function TestLabTab({
             </div>
           </div>
 
-          {/* Summary */}
+          {/* Summary - only show when result exists */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-semibold">Result</h4>
-              {result.success ? (
-                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium flex items-center gap-1">
-                  <CheckCircle2 className="w-4 h-4" /> Success
-                </span>
+              {result ? (
+                result.success ? (
+                  <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" /> Success
+                  </span>
+                ) : (
+                  <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium flex items-center gap-1">
+                    <XCircle className="w-4 h-4" /> Failed
+                  </span>
+                )
               ) : (
-                <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium flex items-center gap-1">
-                  <XCircle className="w-4 h-4" /> Failed
+                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium flex items-center gap-1">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Running...
                 </span>
               )}
             </div>
 
-            {result.error && (
+            {result?.error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                 {result.error}
               </div>
@@ -2236,34 +2242,34 @@ function TestLabTab({
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="p-3 bg-gray-50 rounded-lg">
                 <div className="text-gray-500">Duration</div>
-                <div className="font-bold text-lg">{(result.summary.totalDurationMs / 1000).toFixed(2)}s</div>
+                <div className="font-bold text-lg">{((result?.summary.totalDurationMs || elapsedMs) / 1000).toFixed(2)}s</div>
               </div>
               <div className="p-3 bg-gray-50 rounded-lg">
                 <div className="text-gray-500">Cost</div>
-                <div className="font-bold text-lg">${result.summary.totalCost.toFixed(5)}</div>
+                <div className="font-bold text-lg">${(result?.summary.totalCost || runningCost).toFixed(5)}</div>
               </div>
               <div className="p-3 bg-gray-50 rounded-lg">
                 <div className="text-gray-500">Cache</div>
-                <div className="font-bold text-lg">{result.summary.cacheHit ? '✅ HIT' : '❌ MISS'}</div>
+                <div className="font-bold text-lg">{result ? (result.summary.cacheHit ? '✅ HIT' : '❌ MISS') : '...'}</div>
               </div>
               <div className="p-3 bg-gray-50 rounded-lg">
                 <div className="text-gray-500">Pre-Filter</div>
                 <div className="font-bold text-lg">
-                  {result.summary.preFilterScore !== undefined 
+                  {result?.summary.preFilterScore !== undefined 
                     ? `${result.summary.preFilterScore}/100 ${result.summary.preFilterPassed ? '✅' : '❌'}`
-                    : 'N/A'}
+                    : result ? 'N/A' : '...'}
                 </div>
               </div>
             </div>
 
-            {result.summary.cacheKey && (
+            {result?.summary.cacheKey && (
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
                 <div className="text-blue-600 font-medium">Cache Key</div>
                 <code className="text-blue-800">{result.summary.cacheKey}</code>
               </div>
             )}
 
-            {!result.summary.cacheHit && result.success && (
+            {result && !result.summary.cacheHit && result.success && (
               <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm">
                 <div className="text-gray-600 mb-2">Attempts</div>
                 <div className="flex gap-4">
@@ -2274,13 +2280,15 @@ function TestLabTab({
               </div>
             )}
 
-            {result.lesson !== undefined && (
+            {result?.lesson !== undefined && (
               <div className="mt-4">
                 <button
                   onClick={() => {
-                    const blob = new Blob([JSON.stringify(result.lesson, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    window.open(url, '_blank');
+                    if (result?.lesson) {
+                      const blob = new Blob([JSON.stringify(result.lesson, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      window.open(url, '_blank');
+                    }
                   }}
                   className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
                 >
