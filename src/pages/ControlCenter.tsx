@@ -131,6 +131,36 @@ interface DailyUsageByProvider {
   cost: number;
 }
 
+interface TutorDailyUsage {
+  date: string;
+  lessons: number;
+  cost: number;
+  tokens: number;
+}
+
+interface TutorRecentLesson {
+  sessionId: string;
+  timestamp: string;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
+  steps: number;
+  metadata?: {
+    lessonNumber?: number;
+    hskLevel?: number;
+    focusWords?: string[];
+  };
+}
+
+interface TutorUsageSummary {
+  totalLessons: number;
+  totalCost: number;
+  avgCostPerLesson: number;
+  totalTokens: number;
+  daily: TutorDailyUsage[];
+  recentLessons: TutorRecentLesson[];
+}
+
 type Tab = 'content' | 'devices' | 'announcements' | 'ai-usage';
 
 // ═══════════════════════════════════════════════════════════
@@ -165,6 +195,7 @@ export default function ControlCenter() {
   const [dailyByProvider, setDailyByProvider] = useState<DailyUsageByProvider[]>([]);
   const [providers, setProviders] = useState<Record<string, ProviderConfig>>({});
   const [aiTimePeriod, setAiTimePeriod] = useState<'7' | '30' | '90' | '0'>('0'); // 0 = all time
+  const [tutorSummary, setTutorSummary] = useState<TutorUsageSummary | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -196,16 +227,20 @@ export default function ControlCenter() {
       }
       
       if (activeTab === 'ai-usage') {
-        const data = await api.get<{ 
-          summary: AIUsageSummary; 
-          daily: DailyUsage[]; 
-          dailyByProvider: DailyUsageByProvider[];
-          providers: Record<string, ProviderConfig>;
-        }>(`/v1/admin/ai-usage/summary?days=${aiTimePeriod}`);
+        const [data, tutorData] = await Promise.all([
+          api.get<{ 
+            summary: AIUsageSummary; 
+            daily: DailyUsage[]; 
+            dailyByProvider: DailyUsageByProvider[];
+            providers: Record<string, ProviderConfig>;
+          }>(`/v1/admin/ai-usage/summary?days=${aiTimePeriod}`),
+          api.get<TutorUsageSummary>(`/v1/admin/ai-usage/tutor-summary?days=${aiTimePeriod}`),
+        ]);
         setUsageSummary(data.summary || null);
         setDailyUsage(data.daily || []);
         setDailyByProvider(data.dailyByProvider || []);
         setProviders(data.providers || {});
+        setTutorSummary(tutorData || null);
       }
     } catch (err) {
       setError('Failed to load data');
@@ -389,6 +424,7 @@ export default function ControlCenter() {
           daily={dailyUsage} 
           dailyByProvider={dailyByProvider}
           providers={providers}
+          tutorSummary={tutorSummary}
           loading={loading}
           timePeriod={aiTimePeriod}
           setTimePeriod={setAiTimePeriod}
@@ -1161,6 +1197,7 @@ function AIUsageTab({
   daily, 
   dailyByProvider,
   providers: _providers,
+  tutorSummary,
   loading, 
   timePeriod, 
   setTimePeriod 
@@ -1169,6 +1206,7 @@ function AIUsageTab({
   daily: DailyUsage[]; 
   dailyByProvider: DailyUsageByProvider[];
   providers: Record<string, ProviderConfig>;
+  tutorSummary: TutorUsageSummary | null;
   loading: boolean;
   timePeriod: '7' | '30' | '90' | '0';
   setTimePeriod: (v: '7' | '30' | '90' | '0') => void;
@@ -1323,6 +1361,11 @@ function AIUsageTab({
         </div>
       )}
 
+      {/* AI Tutor Lesson Generation Section */}
+      {tutorSummary && tutorSummary.totalLessons > 0 && (
+        <AITutorSection tutorSummary={tutorSummary} />
+      )}
+
       {/* Daily Usage Table */}
       {daily.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -1365,6 +1408,127 @@ function AIUsageTab({
             AI usage will be tracked here when you use features like example sentence generation,
             vocabulary tagging, or audio synthesis.
           </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// AI TUTOR SECTION
+// ═══════════════════════════════════════════════════════════
+
+function AITutorSection({ tutorSummary }: { tutorSummary: TutorUsageSummary }) {
+  // Simple chart for tutor daily costs
+  const maxDailyCost = Math.max(...tutorSummary.daily.map(d => d.cost), 0.0001);
+  
+  return (
+    <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl border border-violet-200 overflow-hidden">
+      <div className="p-5 border-b border-violet-100 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-violet-600 flex items-center justify-center">
+          <BookOpen className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-gray-900">AI Tutor Lesson Generation</h3>
+          <p className="text-sm text-gray-500">Qwen-powered adaptive lesson generation</p>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="p-5 grid grid-cols-4 gap-4">
+        <div className="bg-white/70 rounded-lg p-4">
+          <div className="text-sm font-medium text-gray-500">Total Lessons</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">{tutorSummary.totalLessons}</div>
+        </div>
+        <div className="bg-white/70 rounded-lg p-4">
+          <div className="text-sm font-medium text-gray-500">Total Cost</div>
+          <div className="text-2xl font-bold text-violet-600 mt-1">${tutorSummary.totalCost.toFixed(4)}</div>
+        </div>
+        <div className="bg-white/70 rounded-lg p-4">
+          <div className="text-sm font-medium text-gray-500">Avg Cost/Lesson</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">${tutorSummary.avgCostPerLesson.toFixed(4)}</div>
+        </div>
+        <div className="bg-white/70 rounded-lg p-4">
+          <div className="text-sm font-medium text-gray-500">Total Tokens</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">{tutorSummary.totalTokens.toLocaleString()}</div>
+        </div>
+      </div>
+
+      {/* Daily Chart */}
+      {tutorSummary.daily.length > 0 && (
+        <div className="px-5 pb-5">
+          <div className="bg-white/70 rounded-lg p-4">
+            <div className="text-sm font-medium text-gray-700 mb-3">Lessons Generated Per Day</div>
+            <div className="flex items-end gap-1 h-24">
+              {tutorSummary.daily.slice(-14).reverse().map((day, i) => {
+                const barHeight = (day.cost / maxDailyCost) * 100;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center group relative">
+                    {/* Tooltip */}
+                    <div className="hidden group-hover:block absolute -top-16 bg-gray-900 text-white text-xs rounded px-2 py-1 z-10 whitespace-nowrap">
+                      <div className="font-semibold">{day.date}</div>
+                      <div>{day.lessons} lesson{day.lessons !== 1 ? 's' : ''}</div>
+                      <div>${day.cost.toFixed(4)}</div>
+                    </div>
+                    {/* Bar */}
+                    <div 
+                      className="w-full bg-violet-500 rounded-t transition-all hover:bg-violet-400"
+                      style={{ height: `${Math.max(barHeight, 4)}%` }}
+                    />
+                    {/* Lesson count */}
+                    <div className="text-xs text-gray-500 mt-1">{day.lessons}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Lessons Table */}
+      {tutorSummary.recentLessons.length > 0 && (
+        <div className="border-t border-violet-100">
+          <div className="p-4 bg-white/50">
+            <div className="text-sm font-medium text-gray-700 mb-3">Recent Lessons</div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-500 border-b border-violet-100">
+                    <th className="text-left py-2 px-3 font-medium">Date</th>
+                    <th className="text-left py-2 px-3 font-medium">Focus Words</th>
+                    <th className="text-right py-2 px-3 font-medium">HSK</th>
+                    <th className="text-right py-2 px-3 font-medium">Tokens</th>
+                    <th className="text-right py-2 px-3 font-medium">Steps</th>
+                    <th className="text-right py-2 px-3 font-medium">Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tutorSummary.recentLessons.slice(0, 10).map((lesson) => (
+                    <tr key={lesson.sessionId} className="border-b border-violet-50 hover:bg-violet-50/50">
+                      <td className="py-2 px-3 font-medium">
+                        {new Date(lesson.timestamp).toLocaleDateString()}
+                      </td>
+                      <td className="py-2 px-3">
+                        {lesson.metadata?.focusWords?.slice(0, 3).join(', ') || '-'}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        {lesson.metadata?.hskLevel || '-'}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        {(lesson.inputTokens + lesson.outputTokens).toLocaleString()}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        {lesson.steps}
+                      </td>
+                      <td className="py-2 px-3 text-right text-violet-600 font-medium">
+                        ${lesson.cost.toFixed(4)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </div>
