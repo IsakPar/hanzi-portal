@@ -7,29 +7,19 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Bot, CheckCircle2, X, Loader2, RefreshCw, 
-  ArrowLeft, ArrowRight, ChevronLeft, ChevronRight,
-  Filter, Zap, ExternalLink
-} from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import api from '@/services/api';
-import { POS_OPTIONS, type VocabularyEntry } from '@/services/vocabularyAPI';
 import { getMetadataStats, tagWord, type MetadataStats } from '@/services/distractorsAPI';
 import { toast } from '@/hooks/useToast';
-
-// ═══════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════
-
-interface VocabWithMeta extends VocabularyEntry {
-  pos?: string | null;
-  tonePattern?: string | null;
-  secondaryCategories?: string[] | null;
-}
-
-type FilterMode = 'missing-pos' | 'missing-tone' | 'missing-secondary' | 'missing-any' | 'all';
+import {
+  MetadataStatsSection,
+  MetadataFilters,
+  MetadataTableRow,
+  MetadataPagination,
+  type FilterMode,
+  type VocabWithMeta,
+} from '@/components/metadata-tagging';
 
 // ═══════════════════════════════════════════════════════════
 // HELPERS
@@ -100,20 +90,17 @@ export function MetadataTaggingPage() {
     setError(null);
     
     try {
-      // Load stats
       const statsData = await getMetadataStats();
       setStats(statsData);
       
-      // Load vocabulary (filtered)
       const params = new URLSearchParams();
-      params.set('limit', '500'); // Get more for filtering
+      params.set('limit', '500');
       if (hskFilter) params.set('hsk_level', hskFilter.toString());
       
       const response = await api.get<{ results: VocabWithMeta[]; total: number }>(
         `/v1/vocabulary?${params.toString()}`
       );
       
-      // Apply filter
       let filtered = response.results || [];
       if (filterMode === 'missing-pos') {
         filtered = filtered.filter(v => !v.pos);
@@ -125,12 +112,11 @@ export function MetadataTaggingPage() {
         filtered = filtered.filter(v => !v.pos || !v.tonePattern || !v.secondaryCategories || v.secondaryCategories.length === 0);
       }
       
-      // Load secondary category stats
       try {
         const secStats = await api.get<{ total: number; withSecondaryCategories: number; percent: number }>('/v1/vocabulary/admin/secondary-category-stats');
         setSecondaryStats({ total: secStats.total, withSecondary: secStats.withSecondaryCategories, percent: secStats.percent });
       } catch {
-        // Silently ignore if endpoint not available
+        // Silently ignore
       }
       
       setVocabulary(filtered);
@@ -158,13 +144,9 @@ export function MetadataTaggingPage() {
       const vocab = vocabulary.find(v => v.id === vocabId);
       if (!vocab) return;
       
-      // Get POS from AI
       const posResult = await tagWord({ wordId: vocabId, field: 'pos' });
-      
-      // Compute tone pattern locally
       const tonePattern = extractTonePattern(vocab.pinyin);
       
-      // Store local changes
       setLocalChanges(prev => ({
         ...prev,
         [vocabId]: {
@@ -193,14 +175,12 @@ export function MetadataTaggingPage() {
         tonePattern: changes.tonePattern || undefined,
       });
       
-      // Update local state
       setVocabulary(prev => prev.map(v => 
         v.id === vocabId 
           ? { ...v, pos: changes.pos || v.pos, tonePattern: changes.tonePattern || v.tonePattern }
           : v
       ));
       
-      // Clear local changes
       setLocalChanges(prev => {
         const next = { ...prev };
         delete next[vocabId];
@@ -216,12 +196,18 @@ export function MetadataTaggingPage() {
   };
 
   const handleSkip = (vocabId: string) => {
-    // Remove from local changes and move to next
     setLocalChanges(prev => {
       const next = { ...prev };
       delete next[vocabId];
       return next;
     });
+  };
+
+  const handleLocalChange = (vocabId: string, field: 'pos' | 'tonePattern', value: string) => {
+    setLocalChanges(prev => ({
+      ...prev,
+      [vocabId]: { ...prev[vocabId], [field]: value },
+    }));
   };
 
   const handleBatchComputeTones = async () => {
@@ -235,9 +221,7 @@ export function MetadataTaggingPage() {
         if (!vocab.tonePattern && vocab.pinyin) {
           const tonePattern = extractTonePattern(vocab.pinyin);
           
-          await api.put(`/v1/vocabulary/admin/${vocab.id}`, {
-            tonePattern,
-          });
+          await api.put(`/v1/vocabulary/admin/${vocab.id}`, { tonePattern });
           
           setVocabulary(prev => prev.map(v => 
             v.id === vocab.id ? { ...v, tonePattern } : v
@@ -274,7 +258,6 @@ export function MetadataTaggingPage() {
         summary: { successful: number; failed: number };
       }>('/v1/vocabulary/admin/bulk-tag-secondary-categories', { wordIds });
 
-      // Update local state with new secondary categories
       setVocabulary(prev => prev.map(v => {
         const tagResult = result.results.find(r => r.wordId === v.id);
         if (tagResult?.success && tagResult.secondaryCategories) {
@@ -334,121 +317,25 @@ export function MetadataTaggingPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="mb-6 grid grid-cols-5 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="text-3xl font-bold text-gray-900">{stats.total}</div>
-            <div className="text-sm text-gray-500">Total Words</div>
-          </div>
-          <div className="bg-white rounded-xl border border-green-200 p-4">
-            <div className="text-3xl font-bold text-green-600">{stats.coverage.pos.count}</div>
-            <div className="text-sm text-gray-500">
-              With POS ({stats.coverage.pos.percent}%)
-            </div>
-            <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-green-500 rounded-full transition-all"
-                style={{ width: `${stats.coverage.pos.percent}%` }}
-              />
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-blue-200 p-4">
-            <div className="text-3xl font-bold text-blue-600">{stats.coverage.tonePattern.count}</div>
-            <div className="text-sm text-gray-500">
-              With Tone ({stats.coverage.tonePattern.percent}%)
-            </div>
-            <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-blue-500 rounded-full transition-all"
-                style={{ width: `${stats.coverage.tonePattern.percent}%` }}
-              />
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-pink-200 p-4">
-            <div className="text-3xl font-bold text-pink-600">{secondaryStats?.withSecondary || 0}</div>
-            <div className="text-sm text-gray-500">
-              With Secondary ({secondaryStats?.percent || 0}%)
-            </div>
-            <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-pink-500 rounded-full transition-all"
-                style={{ width: `${secondaryStats?.percent || 0}%` }}
-              />
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-amber-200 p-4">
-            <div className="text-3xl font-bold text-amber-600">{vocabulary.length}</div>
-            <div className="text-sm text-gray-500">
-              Need Tagging
-            </div>
-          </div>
-        </div>
+        <MetadataStatsSection 
+          stats={stats} 
+          secondaryStats={secondaryStats}
+          needsTaggingCount={vocabulary.length}
+        />
       )}
 
       {/* Filters */}
-      <div className="mb-6 flex items-center gap-4 bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-400" />
-          <Label className="text-sm font-medium">Filter:</Label>
-        </div>
-        
-        <select
-          value={filterMode}
-          onChange={(e) => setFilterMode(e.target.value as FilterMode)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-        >
-          <option value="missing-any">Missing Any Metadata</option>
-          <option value="missing-pos">Missing POS</option>
-          <option value="missing-tone">Missing Tone Pattern</option>
-          <option value="missing-secondary">Missing Secondary Categories</option>
-          <option value="all">All Vocabulary</option>
-        </select>
-
-        <select
-          value={hskFilter || ''}
-          onChange={(e) => setHskFilter(e.target.value ? Number(e.target.value) : null)}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-        >
-          <option value="">All HSK Levels</option>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(level => (
-            <option key={level} value={level}>HSK {level}</option>
-          ))}
-        </select>
-
-        <div className="flex-1" />
-
-        <Button
-          variant="outline"
-          onClick={handleBatchComputeTones}
-          disabled={batchProcessing}
-          className="border-blue-300 text-blue-700"
-        >
-          {batchProcessing ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Zap className="w-4 h-4 mr-2" />
-          )}
-          Compute Tones
-        </Button>
-
-        <Button
-          variant="outline"
-          onClick={handleBatchTagSecondaryCategories}
-          disabled={batchSecondaryProcessing}
-          className="border-pink-300 text-pink-700"
-        >
-          {batchSecondaryProcessing ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Bot className="w-4 h-4 mr-2" />
-          )}
-          AI Tag Secondary (This Page)
-        </Button>
-
-        <Button variant="outline" onClick={loadData}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh
-        </Button>
-      </div>
+      <MetadataFilters
+        filterMode={filterMode}
+        setFilterMode={setFilterMode}
+        hskFilter={hskFilter}
+        setHskFilter={setHskFilter}
+        batchProcessing={batchProcessing}
+        batchSecondaryProcessing={batchSecondaryProcessing}
+        onComputeTones={handleBatchComputeTones}
+        onTagSecondary={handleBatchTagSecondaryCategories}
+        onRefresh={loadData}
+      />
 
       {/* Error */}
       {error && (
@@ -480,186 +367,34 @@ export function MetadataTaggingPage() {
                 </td>
               </tr>
             ) : (
-              currentPageItems.map((vocab) => {
-                const hasLocalChanges = localChanges[vocab.id];
-                const displayPos = hasLocalChanges?.pos ?? vocab.pos;
-                const displayTone = hasLocalChanges?.tonePattern ?? vocab.tonePattern;
-                
-                return (
-                  <tr key={vocab.id} className="hover:bg-gray-50">
-                    {/* Word */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-semibold text-gray-900">{vocab.hanzi}</span>
-                        <a
-                          href={`/vocabulary/${vocab.id}/edit`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-gray-400 hover:text-gray-600"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                      <div className="text-xs text-gray-500">{vocab.english}</div>
-                    </td>
-                    
-                    {/* Pinyin */}
-                    <td className="px-4 py-3 text-gray-600">{vocab.pinyin}</td>
-                    
-                    {/* Category */}
-                    <td className="px-4 py-3">
-                      <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
-                        {vocab.category}
-                      </span>
-                    </td>
-                    
-                    {/* POS */}
-                    <td className="px-4 py-3">
-                      {hasLocalChanges ? (
-                        <select
-                          value={displayPos || ''}
-                          onChange={(e) => setLocalChanges(prev => ({
-                            ...prev,
-                            [vocab.id]: { ...prev[vocab.id], pos: e.target.value },
-                          }))}
-                          className="text-sm px-2 py-1 border border-green-300 rounded bg-green-50"
-                        >
-                          <option value="">Select...</option>
-                          {POS_OPTIONS.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
-                      ) : displayPos ? (
-                        <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700">
-                          {displayPos}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
-                    </td>
-                    
-                    {/* Tone */}
-                    <td className="px-4 py-3">
-                      {hasLocalChanges ? (
-                        <input
-                          value={displayTone || ''}
-                          onChange={(e) => setLocalChanges(prev => ({
-                            ...prev,
-                            [vocab.id]: { ...prev[vocab.id], tonePattern: e.target.value },
-                          }))}
-                          className="text-sm px-2 py-1 border border-blue-300 rounded bg-blue-50 font-mono w-20"
-                          placeholder="1-1"
-                        />
-                      ) : displayTone ? (
-                        <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 font-mono">
-                          {displayTone}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
-                    </td>
-                    
-                    {/* Actions */}
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {hasLocalChanges ? (
-                          <>
-                            <Button
-                              size="sm"
-                              onClick={() => handleSaveSingle(vocab.id)}
-                              disabled={savingId === vocab.id}
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              {savingId === vocab.id ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="w-3 h-3" />
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleSkip(vocab.id)}
-                            >
-                              <X className="w-3 h-3" />
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleAiTagSingle(vocab.id)}
-                            disabled={taggingId === vocab.id}
-                            className="border-green-300 text-green-700"
-                          >
-                            {taggingId === vocab.id ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Bot className="w-3 h-3" />
-                            )}
-                            <span className="ml-1">AI Tag</span>
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
+              currentPageItems.map((vocab) => (
+                <MetadataTableRow
+                  key={vocab.id}
+                  vocab={vocab}
+                  localChanges={localChanges[vocab.id]}
+                  taggingId={taggingId}
+                  savingId={savingId}
+                  onLocalChange={handleLocalChange}
+                  onAiTag={handleAiTagSingle}
+                  onSave={handleSaveSingle}
+                  onSkip={handleSkip}
+                />
+              ))
             )}
           </tbody>
         </table>
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between">
-          <div className="text-sm text-gray-500">
-            Showing {page * pageSize + 1} - {Math.min((page + 1) * pageSize, vocabulary.length)} of {vocabulary.length}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(0)}
-              disabled={page === 0}
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <ChevronLeft className="w-4 h-4 -ml-2" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(p => Math.max(0, p - 1))}
-              disabled={page === 0}
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <span className="text-sm text-gray-600 px-2">
-              Page {page + 1} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
-            >
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(totalPages - 1)}
-              disabled={page >= totalPages - 1}
-            >
-              <ChevronRight className="w-4 h-4" />
-              <ChevronRight className="w-4 h-4 -ml-2" />
-            </Button>
-          </div>
-        </div>
-      )}
+      <MetadataPagination
+        page={page}
+        pageSize={pageSize}
+        total={vocabulary.length}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      />
     </div>
   );
 }
 
 export default MetadataTaggingPage;
-
