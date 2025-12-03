@@ -1,13 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Slider } from "@/components/ui/slider";
 import { 
-  ArrowLeft, Save, AlertCircle, CheckCircle2, Music, Loader2,
-  Sparkles, Play, Pause, RotateCcw, Check, X, Volume2, Bot, RefreshCw
+  ArrowLeft, Save, AlertCircle, Loader2, CheckCircle2,
+  Sparkles, X, Volume2, Music, Bot, RefreshCw
 } from "lucide-react";
 import { HanziInput } from "@/components/shared/HanziInput";
 import {
@@ -19,15 +18,22 @@ import {
   previewExampleAudio,
   saveWordAudio,
   saveExampleAudio,
-  HSK_LEVELS,
-  COMMON_CATEGORIES,
   POS_OPTIONS,
   type VocabularyEntry,
 } from "@/services/vocabularyAPI";
 import { tagWord } from "@/services/distractorsAPI";
 import { toast } from "@/hooks/useToast";
-import { processAudioAtSpeed } from "@/utils/audioProcessor";
-import api, { CDN_BASE_URL } from "@/services/api";
+import api from "@/services/api";
+
+// Reusable components
+import { AudioPreviewApproval } from "@/components/audio/AudioPreviewApproval";
+import { 
+  SecondaryCategoryPicker,
+  COMMON_CATEGORIES,
+  HSK_LEVELS,
+  VOICES,
+  type VoiceId,
+} from "@/components/forms";
 
 interface VocabLesson {
   id: string;
@@ -36,14 +42,6 @@ interface VocabLesson {
   lessonNumber: number;
   contentStatus: string;
 }
-
-// Voice options for ElevenLabs
-const VOICES = [
-  { id: 'chinese-female-1', name: 'Mei Lin (Female)', description: 'Clear, natural' },
-  { id: 'chinese-female-2', name: 'Xiao Mei (Female)', description: 'Younger, friendly' },
-  { id: 'chinese-male-1', name: 'Wei Chen (Male)', description: 'Clear, natural' },
-  { id: 'chinese-male-2', name: 'Zhang Wei (Male)', description: 'Deeper voice' },
-];
 
 interface VocabularyEditorProps {
   /** For embedded mode: word ID to edit (overrides URL param) */
@@ -94,7 +92,6 @@ export function VocabularyEditor({
   const [tonePattern, setTonePattern] = useState<string>("");
   const [secondaryCategories, setSecondaryCategories] = useState<string[]>([]);
   const [aiTagging, setAiTagging] = useState(false);
-  const [aiTaggingSecondary, setAiTaggingSecondary] = useState(false);
   
   // Lessons using this word
   const [usedInLessons, setUsedInLessons] = useState<VocabLesson[]>([]);
@@ -102,41 +99,13 @@ export function VocabularyEditor({
   const [aiSuggestions, setAiSuggestions] = useState<{
     pos?: { value: string; suggested: boolean };
     tonePattern?: { value: string; computed: boolean };
-    category?: { value: string; suggested: boolean };
-    secondaryCategories?: { value: string[]; suggested: boolean };
   } | null>(null);
-
-  // Available secondary categories
-  const SECONDARY_CATEGORY_OPTIONS = [
-    'people', 'relationships', 'emotions', 'actions', 'descriptive',
-    'time', 'location', 'quantity', 'question', 'polite',
-    'formal', 'informal', 'spoken', 'written', 'idiom',
-    'measure', 'direction', 'color', 'size', 'state',
-    'weather', 'nature', 'body', 'health', 'education',
-    'work', 'travel', 'communication', 'daily-life', 'culture',
-  ];
   
   // AI generation state
   const [generatingExample, setGeneratingExample] = useState(false);
   
-  // Audio states
-  const [selectedVoice, setSelectedVoice] = useState('chinese-female-1');
-  
-  // Word audio - store original base64 and control playback speed separately
-  const [wordAudioBase64, setWordAudioBase64] = useState<string | null>(null); // Original from ElevenLabs
-  const [wordPlaybackSpeed, setWordPlaybackSpeed] = useState(0.7); // Playback speed (0.5-1.0)
-  const [generatingWordAudio, setGeneratingWordAudio] = useState(false);
-  const [savingWordAudio, setSavingWordAudio] = useState(false);
-  const [playingWordAudio, setPlayingWordAudio] = useState(false);
-  const wordAudioRef = useRef<HTMLAudioElement | null>(null);
-  
-  // Example audio - store original base64 and control playback speed separately
-  const [exampleAudioBase64, setExampleAudioBase64] = useState<string | null>(null); // Original from ElevenLabs
-  const [examplePlaybackSpeed, setExamplePlaybackSpeed] = useState(0.7); // Playback speed (0.5-1.0)
-  const [generatingExampleAudio, setGeneratingExampleAudio] = useState(false);
-  const [savingExampleAudio, setSavingExampleAudio] = useState(false);
-  const [playingExampleAudio, setPlayingExampleAudio] = useState(false);
-  const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Audio voice selection (shared between word and example)
+  const [selectedVoice, setSelectedVoice] = useState<VoiceId>('chinese-female-1');
 
   useEffect(() => {
     if (!isNew && id) {
@@ -250,53 +219,28 @@ export function VocabularyEditor({
     toast.success("Tone pattern computed", computed);
   }
 
-  async function handleAiSuggestSecondaryCategories() {
-    if (isNew || !id) {
-      toast.error("Save first", "Please save the entry before AI tagging");
-      return;
+  // AI suggest secondary categories (for SecondaryCategoryPicker)
+  const handleAiSuggestSecondaryCategories = async (): Promise<string[]> => {
+    if (!id) throw new Error("Save first");
+    
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.studio.polymasterlabs.com';
+    const response = await fetch(`${API_BASE_URL}/v1/vocabulary/admin/bulk-tag-secondary-categories`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('hm_access_token')}`,
+      },
+      body: JSON.stringify({ wordIds: [id] }),
+    });
+
+    const result = await response.json();
+    
+    if (result.results?.[0]?.success) {
+      return result.results[0].secondaryCategories || [];
+    } else {
+      throw new Error(result.results?.[0]?.error || result.error || "AI tagging failed");
     }
-
-    setAiTaggingSecondary(true);
-
-    try {
-      // Import API_BASE_URL from api service
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.studio.polymasterlabs.com';
-      const response = await fetch(`${API_BASE_URL}/v1/vocabulary/admin/bulk-tag-secondary-categories`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('hm_access_token')}`,
-        },
-        body: JSON.stringify({ wordIds: [id] }),
-      });
-
-      const result = await response.json();
-      
-      if (result.results?.[0]?.success) {
-        const cats = result.results[0].secondaryCategories || [];
-        setSecondaryCategories(cats);
-        setAiSuggestions(prev => ({
-          ...prev,
-          secondaryCategories: { value: cats, suggested: true },
-        }));
-        toast.success("AI suggested categories", cats.length > 0 ? cats.join(', ') : "No categories suggested");
-      } else {
-        toast.error("AI tagging failed", result.results?.[0]?.error || result.error || "Unknown error");
-      }
-    } catch (err) {
-      toast.error("AI tagging failed", (err as Error).message);
-    } finally {
-      setAiTaggingSecondary(false);
-    }
-  }
-
-  function toggleSecondaryCategory(cat: string) {
-    setSecondaryCategories(prev => 
-      prev.includes(cat) 
-        ? prev.filter(c => c !== cat)
-        : [...prev, cat]
-    );
-  }
+  };
 
   // === AI EXAMPLE GENERATION ===
   async function handleGenerateExample() {
@@ -322,139 +266,36 @@ export function VocabularyEditor({
     }
   }
 
-  // === WORD AUDIO PREVIEW/SAVE ===
-  async function handleGenerateWordAudio() {
-    if (isNew || !id) {
-      toast.error("Save first", "Please save the entry before generating audio");
-      return;
-    }
-    
-    try {
-      setGeneratingWordAudio(true);
-      // Always generate at normal speed (1.0x) - we'll adjust playback after
-      const result = await previewWordAudio(id, selectedVoice, 1.0);
-      setWordAudioBase64(result.audioBase64);
-      toast.success("Audio generated!", "Adjust speed slider and listen, then approve");
-    } catch (err) {
-      toast.error("Audio generation failed", (err as Error).message);
-    } finally {
-      setGeneratingWordAudio(false);
-    }
-  }
-
-  async function handleSaveWordAudio() {
-    if (!wordAudioBase64 || !id) return;
-    
-    try {
-      setSavingWordAudio(true);
-      
-      // If speed is not 1.0, process the audio to actually slow it down
-      let finalBase64 = wordAudioBase64;
-      if (wordPlaybackSpeed !== 1.0) {
-        toast.info("Processing audio...", `Applying ${wordPlaybackSpeed}x speed`);
-        finalBase64 = await processAudioAtSpeed(wordAudioBase64, wordPlaybackSpeed);
-      }
-      
-      const result = await saveWordAudio(id, finalBase64);
-      setEntry(prev => ({ ...prev, wordAudioR2Key: result.r2Key }));
-      setWordAudioBase64(null);
-      toast.success("Audio saved!", `Word audio saved at ${wordPlaybackSpeed}x speed`);
-    } catch (err) {
-      toast.error("Save failed", (err as Error).message);
-    } finally {
-      setSavingWordAudio(false);
-    }
-  }
-
-  function playWordAudio() {
-    if (wordAudioRef.current) {
-      if (playingWordAudio) {
-        wordAudioRef.current.pause();
-        setPlayingWordAudio(false);
-      } else {
-        // Apply playback speed before playing
-        wordAudioRef.current.playbackRate = wordPlaybackSpeed;
-        wordAudioRef.current.play();
-        setPlayingWordAudio(true);
-      }
-    }
-  }
+  // === AUDIO HANDLERS (for AudioPreviewApproval component) ===
   
-  // Update playback speed in real-time if audio is playing
-  useEffect(() => {
-    if (wordAudioRef.current) {
-      wordAudioRef.current.playbackRate = wordPlaybackSpeed;
-    }
-  }, [wordPlaybackSpeed]);
-
-  // === EXAMPLE AUDIO PREVIEW/SAVE ===
-  async function handleGenerateExampleAudio() {
-    if (isNew || !id) {
-      toast.error("Save first", "Please save the entry before generating audio");
-      return;
-    }
-    if (!entry.exampleChinese) {
-      toast.error("No example", "Generate an example sentence first");
-      return;
-    }
-    
-    try {
-      setGeneratingExampleAudio(true);
-      // Always generate at normal speed (1.0x) - we'll adjust playback after
-      const result = await previewExampleAudio(id, selectedVoice, 1.0);
-      setExampleAudioBase64(result.audioBase64);
-      toast.success("Audio generated!", "Adjust speed slider and listen, then approve");
-    } catch (err) {
-      toast.error("Audio generation failed", (err as Error).message);
-    } finally {
-      setGeneratingExampleAudio(false);
-    }
-  }
-
-  async function handleSaveExampleAudio() {
-    if (!exampleAudioBase64 || !id) return;
-    
-    try {
-      setSavingExampleAudio(true);
-      
-      // If speed is not 1.0, process the audio to actually slow it down
-      let finalBase64 = exampleAudioBase64;
-      if (examplePlaybackSpeed !== 1.0) {
-        toast.info("Processing audio...", `Applying ${examplePlaybackSpeed}x speed`);
-        finalBase64 = await processAudioAtSpeed(exampleAudioBase64, examplePlaybackSpeed);
-      }
-      
-      const result = await saveExampleAudio(id, finalBase64);
-      setEntry(prev => ({ ...prev, exampleAudioR2Key: result.r2Key }));
-      setExampleAudioBase64(null);
-      toast.success("Audio saved!", `Example audio saved at ${examplePlaybackSpeed}x speed`);
-    } catch (err) {
-      toast.error("Save failed", (err as Error).message);
-    } finally {
-      setSavingExampleAudio(false);
-    }
-  }
-
-  function playExampleAudio() {
-    if (exampleAudioRef.current) {
-      if (playingExampleAudio) {
-        exampleAudioRef.current.pause();
-        setPlayingExampleAudio(false);
-      } else {
-        // Apply playback speed before playing
-        exampleAudioRef.current.playbackRate = examplePlaybackSpeed;
-        exampleAudioRef.current.play();
-        setPlayingExampleAudio(true);
-      }
-    }
-  }
+  // Generate word audio - returns base64
+  const handleGenerateWordAudio = async (): Promise<string> => {
+    if (!id) throw new Error("Save first");
+    const result = await previewWordAudio(id, selectedVoice, 1.0);
+    return result.audioBase64;
+  };
   
-  // Update playback speed in real-time if audio is playing
-  useEffect(() => {
-    if (exampleAudioRef.current) {
-      exampleAudioRef.current.playbackRate = examplePlaybackSpeed;
-    }
-  }, [examplePlaybackSpeed]);
+  // Save word audio
+  const handleSaveWordAudio = async (base64: string): Promise<void> => {
+    if (!id) throw new Error("Save first");
+    const result = await saveWordAudio(id, base64);
+    setEntry(prev => ({ ...prev, wordAudioR2Key: result.r2Key }));
+  };
+  
+  // Generate example audio - returns base64
+  const handleGenerateExampleAudio = async (): Promise<string> => {
+    if (!id) throw new Error("Save first");
+    if (!entry.exampleChinese) throw new Error("Generate example sentence first");
+    const result = await previewExampleAudio(id, selectedVoice, 1.0);
+    return result.audioBase64;
+  };
+  
+  // Save example audio
+  const handleSaveExampleAudio = async (base64: string): Promise<void> => {
+    if (!id) throw new Error("Save first");
+    const result = await saveExampleAudio(id, base64);
+    setEntry(prev => ({ ...prev, exampleAudioR2Key: result.r2Key }));
+  };
 
   // === SAVE ENTRY ===
   async function handleSave() {
@@ -525,22 +366,6 @@ export function VocabularyEditor({
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
-      {/* Hidden audio elements for preview playback */}
-      {wordAudioBase64 && (
-        <audio 
-          ref={wordAudioRef} 
-          src={`data:audio/mpeg;base64,${wordAudioBase64}`}
-          onEnded={() => setPlayingWordAudio(false)} 
-        />
-      )}
-      {exampleAudioBase64 && (
-        <audio 
-          ref={exampleAudioRef} 
-          src={`data:audio/mpeg;base64,${exampleAudioBase64}`}
-          onEnded={() => setPlayingExampleAudio(false)} 
-        />
-      )}
-
       {/* Header */}
       <div className="mb-8">
         {/* Back button - different behavior in embedded mode */}
@@ -571,7 +396,7 @@ export function VocabularyEditor({
               <Label className="text-sm text-gray-600">Voice:</Label>
               <select
                 value={selectedVoice}
-                onChange={(e) => setSelectedVoice(e.target.value)}
+                onChange={(e) => setSelectedVoice(e.target.value as VoiceId)}
                 className="text-sm px-2 py-1 border border-gray-300 rounded-lg"
               >
                 {VOICES.map((v) => (
@@ -660,86 +485,16 @@ export function VocabularyEditor({
             </div>
 
             {/* Word Audio Section */}
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4">
-              <Label className="text-purple-900 flex items-center gap-2 mb-3">
-                <Volume2 className="w-4 h-4" />
-                Word Audio
-              </Label>
-              
-              {/* Existing audio */}
-              {entry.wordAudioR2Key && !wordAudioBase64 && (
-                <div className="flex items-center gap-3 mb-3 p-2 bg-white rounded-lg border border-green-200">
-                  <CheckCircle2 className="w-4 h-4 text-green-600" />
-                  <span className="text-sm text-green-700">Audio saved</span>
-                  <audio controls className="h-8 flex-1">
-                    <source src={`${CDN_BASE_URL}/${entry.wordAudioR2Key}`} />
-                  </audio>
-                </div>
-              )}
-              
-              {/* Audio preview with speed control */}
-              {wordAudioBase64 ? (
-                <div className="space-y-3 p-3 bg-white rounded-lg border border-purple-300">
-                  {/* Playback controls */}
-                  <div className="flex items-center gap-3">
-                    <Button size="sm" variant="outline" onClick={playWordAudio} className="border-purple-300">
-                      {playingWordAudio ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                    </Button>
-                    <div className="flex-1 text-sm text-purple-700">
-                      {playingWordAudio ? "Playing..." : "Ready to play"}
-                    </div>
-                    <Button size="sm" variant="outline" onClick={handleGenerateWordAudio} disabled={generatingWordAudio} title="Regenerate">
-                      <RotateCcw className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setWordAudioBase64(null)} title="Discard">
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  
-                  {/* Speed slider - adjust AFTER generating */}
-                  <div className="flex items-center gap-3 pt-2 border-t border-purple-100">
-                    <Label className="text-xs text-purple-700 whitespace-nowrap">
-                      Playback: <span className="font-bold">{wordPlaybackSpeed.toFixed(2)}x</span>
-                    </Label>
-                      <Slider
-                        value={[wordPlaybackSpeed]}
-                        onValueChange={(values: number[]) => setWordPlaybackSpeed(values[0])}
-                        min={0.5}
-                        max={1.0}
-                        step={0.05}
-                        className="flex-1"
-                      />
-                    <span className="text-xs text-gray-500">{wordPlaybackSpeed < 0.7 ? "Slow" : wordPlaybackSpeed < 0.9 ? "Learning" : "Normal"}</span>
-                  </div>
-                  
-                  {/* Save button */}
-                  <Button 
-                    onClick={handleSaveWordAudio} 
-                    disabled={savingWordAudio} 
-                    className="w-full bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    {savingWordAudio ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        {wordPlaybackSpeed !== 1.0 ? "Processing & Saving..." : "Saving..."}
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 mr-2" />
-                        Save at {wordPlaybackSpeed}x Speed
-                      </>
-                    )}
-                  </Button>
-                </div>
-              ) : (
-                <Button onClick={handleGenerateWordAudio} disabled={generatingWordAudio || isNew} variant="outline" className="w-full border-purple-300 text-purple-700 hover:bg-purple-100">
-                  {generatingWordAudio ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Volume2 className="w-4 h-4 mr-2" />}
-                  {generatingWordAudio ? "Generating..." : "Generate Word Audio"}
-                </Button>
-              )}
-              
-              {isNew && <p className="text-xs text-purple-600 mt-2">💡 Save the entry first to generate audio</p>}
-            </div>
+            <AudioPreviewApproval
+              label="Word Audio"
+              icon={<Volume2 className="w-4 h-4" />}
+              colorTheme="purple"
+              savedAudioKey={entry.wordAudioR2Key}
+              canGenerate={!isNew}
+              disabledHint="💡 Save the entry first to generate audio"
+              onGenerate={handleGenerateWordAudio}
+              onSave={handleSaveWordAudio}
+            />
           </div>
         </div>
 
@@ -776,84 +531,16 @@ export function VocabularyEditor({
 
             {/* Example Audio Section */}
             {entry.exampleChinese && (
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
-                <Label className="text-blue-900 flex items-center gap-2 mb-3">
-                  <Music className="w-4 h-4" />
-                  Sentence Audio
-                </Label>
-                
-                {/* Existing audio */}
-                {entry.exampleAudioR2Key && !exampleAudioBase64 && (
-                  <div className="flex items-center gap-3 mb-3 p-2 bg-white rounded-lg border border-green-200">
-                    <CheckCircle2 className="w-4 h-4 text-green-600" />
-                    <span className="text-sm text-green-700">Audio saved</span>
-                    <audio controls className="h-8 flex-1">
-                      <source src={`${CDN_BASE_URL}/${entry.exampleAudioR2Key}`} />
-                    </audio>
-                  </div>
-                )}
-                
-                {/* Audio preview with speed control */}
-                {exampleAudioBase64 ? (
-                  <div className="space-y-3 p-3 bg-white rounded-lg border border-blue-300">
-                    {/* Playback controls */}
-                    <div className="flex items-center gap-3">
-                      <Button size="sm" variant="outline" onClick={playExampleAudio} className="border-blue-300">
-                        {playingExampleAudio ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                      </Button>
-                      <div className="flex-1 text-sm text-blue-700">
-                        {playingExampleAudio ? "Playing..." : "Ready to play"}
-                      </div>
-                      <Button size="sm" variant="outline" onClick={handleGenerateExampleAudio} disabled={generatingExampleAudio} title="Regenerate">
-                        <RotateCcw className="w-4 h-4" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setExampleAudioBase64(null)} title="Discard">
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    
-                    {/* Speed slider - adjust AFTER generating */}
-                    <div className="flex items-center gap-3 pt-2 border-t border-blue-100">
-                      <Label className="text-xs text-blue-700 whitespace-nowrap">
-                        Playback: <span className="font-bold">{examplePlaybackSpeed.toFixed(2)}x</span>
-                      </Label>
-                      <Slider
-                        value={[examplePlaybackSpeed]}
-                        onValueChange={(values: number[]) => setExamplePlaybackSpeed(values[0])}
-                        min={0.5}
-                        max={1.0}
-                        step={0.05}
-                        className="flex-1"
-                      />
-                      <span className="text-xs text-gray-500">{examplePlaybackSpeed < 0.7 ? "Slow" : examplePlaybackSpeed < 0.9 ? "Learning" : "Normal"}</span>
-                    </div>
-                    
-                    {/* Save button */}
-                    <Button 
-                      onClick={handleSaveExampleAudio} 
-                      disabled={savingExampleAudio} 
-                      className="w-full bg-green-600 hover:bg-green-700 text-white"
-                    >
-                      {savingExampleAudio ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          {examplePlaybackSpeed !== 1.0 ? "Processing & Saving..." : "Saving..."}
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-4 h-4 mr-2" />
-                          Save at {examplePlaybackSpeed}x Speed
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                ) : (
-                  <Button onClick={handleGenerateExampleAudio} disabled={generatingExampleAudio || isNew || !entry.exampleChinese} variant="outline" className="w-full border-blue-300 text-blue-700 hover:bg-blue-100">
-                    {generatingExampleAudio ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Music className="w-4 h-4 mr-2" />}
-                    {generatingExampleAudio ? "Generating..." : "Generate Sentence Audio"}
-                  </Button>
-                )}
-              </div>
+              <AudioPreviewApproval
+                label="Sentence Audio"
+                icon={<Music className="w-4 h-4" />}
+                colorTheme="blue"
+                savedAudioKey={entry.exampleAudioR2Key}
+                canGenerate={!isNew && !!entry.exampleChinese}
+                disabledHint="💡 Save the entry and add example sentence first"
+                onGenerate={handleGenerateExampleAudio}
+                onSave={handleSaveExampleAudio}
+              />
             )}
           </div>
         </div>
@@ -957,74 +644,17 @@ export function VocabularyEditor({
 
             {/* Secondary Categories */}
             <div className="bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <Label className="text-pink-900 flex items-center gap-2">
-                  <span className="text-lg">🏷️</span>
-                  Secondary Categories
-                </Label>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleAiSuggestSecondaryCategories}
-                  disabled={aiTaggingSecondary || isNew}
-                  className="border-pink-300 text-pink-700 hover:bg-pink-100"
-                >
-                  {aiTaggingSecondary ? (
-                    <>
-                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                      AI Suggesting...
-                    </>
-                  ) : (
-                    <>
-                      <Bot className="w-3 h-3 mr-1" />
-                      AI Suggest
-                    </>
-                  )}
-                </Button>
-              </div>
-              <p className="text-xs text-pink-700 mb-3">
+              <SecondaryCategoryPicker
+                value={secondaryCategories}
+                onChange={setSecondaryCategories}
+                label="Secondary Categories"
+                showAISuggest={true}
+                onAISuggest={handleAiSuggestSecondaryCategories}
+                canUseAI={!isNew}
+              />
+              <p className="text-xs text-pink-700 mt-2">
                 Select additional semantic categories for better distractor generation
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {SECONDARY_CATEGORY_OPTIONS.map((cat) => {
-                  const isSelected = secondaryCategories.includes(cat);
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => toggleSecondaryCategory(cat)}
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                        isSelected
-                          ? 'bg-pink-500 text-white shadow-sm'
-                          : 'bg-white text-gray-600 border border-gray-200 hover:border-pink-300 hover:text-pink-700'
-                      }`}
-                    >
-                      {cat}
-                      {isSelected && <span className="ml-1">✓</span>}
-                    </button>
-                  );
-                })}
-              </div>
-              {secondaryCategories.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-pink-200 flex items-center justify-between">
-                  <span className="text-xs text-pink-700">
-                    Selected: <strong>{secondaryCategories.join(', ')}</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSecondaryCategories([])}
-                    className="text-xs text-pink-600 hover:text-pink-800"
-                  >
-                    Clear all
-                  </button>
-                </div>
-              )}
-              {aiSuggestions?.secondaryCategories && (
-                <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  AI suggested: {aiSuggestions.secondaryCategories.value.join(', ') || 'None'}
-                </p>
-              )}
             </div>
 
             {/* Metadata Status Summary */}
