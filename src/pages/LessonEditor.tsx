@@ -17,7 +17,9 @@ import { useSaveShortcut, useEscapeKey } from "@/hooks/useKeyboardShortcuts";
 import { useAbortController } from "@/hooks/useAbortController";
 import { LessonImportModal } from "@/components/lesson-editor/LessonImportModal";
 import { LessonChecklist } from "@/components/lesson-editor/LessonChecklist";
+import { LessonVocabHealthModal } from "@/components/lesson-editor/LessonVocabHealthModal";
 import { useAIAssistant } from "@/contexts/AIAssistantContext";
+import { Stethoscope } from "lucide-react";
 
 // Default structure for a new lesson
 const createNewLesson = (): Lesson => ({
@@ -57,6 +59,7 @@ export function LessonEditor() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showHealthModal, setShowHealthModal] = useState(false);
   
   // Ref for save handler (needed for keyboard shortcut)
   const saveHandlerRef = useRef<() => void>(() => {});
@@ -382,6 +385,16 @@ export function LessonEditor() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowHealthModal(true)}
+            title="Check vocabulary health"
+            className="relative"
+          >
+            <Stethoscope size={16} className="mr-2" />
+            Health
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowSettings(!showSettings)}
           >
             <Settings size={16} className="mr-2" />
@@ -519,6 +532,14 @@ export function LessonEditor() {
         onClose={() => setShowImportModal(false)}
         onImport={handleImportLesson}
         currentHskLevel={lesson.hskLevel}
+      />
+
+      {/* Vocabulary Health Modal */}
+      <LessonVocabHealthModal
+        isOpen={showHealthModal}
+        onClose={() => setShowHealthModal(false)}
+        blocks={lesson.blocks || []}
+        lessonId={lesson.id}
       />
     </div>
   );

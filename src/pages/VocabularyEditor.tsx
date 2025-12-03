@@ -45,13 +45,35 @@ const VOICES = [
   { id: 'chinese-male-2', name: 'Zhang Wei (Male)', description: 'Deeper voice' },
 ];
 
-export function VocabularyEditor() {
-  const { id } = useParams<{ id: string }>();
+interface VocabularyEditorProps {
+  /** For embedded mode: word ID to edit (overrides URL param) */
+  wordId?: string | null;
+  /** For embedded mode: initial hanzi for new words */
+  initialHanzi?: string;
+  /** For embedded mode: hide the navigation header */
+  embedded?: boolean;
+  /** For embedded mode: callback when saved */
+  onSaved?: () => void;
+  /** For embedded mode: callback to close */
+  onClose?: () => void;
+}
+
+export function VocabularyEditor({
+  wordId: propWordId,
+  initialHanzi,
+  embedded = false,
+  onSaved,
+  onClose,
+}: VocabularyEditorProps = {}) {
+  const { id: urlId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const isNew = id === "new";
+  
+  // Use prop wordId if in embedded mode, otherwise use URL param
+  const id = embedded ? propWordId : urlId;
+  const isNew = embedded ? !propWordId : urlId === "new";
 
   const [entry, setEntry] = useState<Partial<VocabularyEntry>>({
-    hanzi: "",
+    hanzi: initialHanzi || "",
     pinyin: "",
     english: "",
     category: "",
@@ -469,10 +491,21 @@ export function VocabularyEditor() {
       if (isNew) {
         const created = await createVocabulary(data);
         toast.success("Created!", "Vocabulary entry created");
-        navigate(`/vocabulary/${created.id}/edit`);
+        
+        // In embedded mode, call onSaved callback; otherwise navigate
+        if (embedded) {
+          onSaved?.();
+        } else {
+          navigate(`/vocabulary/${created.id}/edit`);
+        }
       } else {
         await updateVocabulary(id!, data);
         toast.success("Saved!", "Vocabulary entry updated");
+        
+        // In embedded mode, call onSaved callback
+        if (embedded) {
+          onSaved?.();
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save entry");
@@ -510,10 +543,18 @@ export function VocabularyEditor() {
 
       {/* Header */}
       <div className="mb-8">
-        <Button variant="outline" onClick={() => navigate("/vocabulary")} className="mb-4">
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Vocabulary
-        </Button>
+        {/* Back button - different behavior in embedded mode */}
+        {embedded ? (
+          <Button variant="outline" onClick={onClose} className="mb-4">
+            <X className="w-4 h-4 mr-2" />
+            Close
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => navigate("/vocabulary")} className="mb-4">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Vocabulary
+          </Button>
+        )}
 
         <div className="flex items-center justify-between">
           <div>
@@ -1094,7 +1135,7 @@ export function VocabularyEditor() {
           <Button onClick={handleSave} disabled={saving} className="flex-1 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700">
             {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : <><Save className="w-4 h-4 mr-2" />Save Entry</>}
           </Button>
-          <Button onClick={() => navigate("/vocabulary")} variant="outline" disabled={saving}>Cancel</Button>
+          <Button onClick={embedded ? onClose : () => navigate("/vocabulary")} variant="outline" disabled={saving}>Cancel</Button>
         </div>
       </div>
 

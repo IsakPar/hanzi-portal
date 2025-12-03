@@ -119,6 +119,47 @@ export async function getCategories(): Promise<string[]> {
   return response.categories;
 }
 
+// ═══════════════════════════════════════════════════════════
+// VOCABULARY HEALTH CHECK
+// ═══════════════════════════════════════════════════════════
+
+export interface WordHealth {
+  hanzi: string;
+  exists: boolean;
+  id?: string;
+  pinyin?: string;
+  english?: string;
+  category?: string;
+  hasAudio: boolean;
+  hasCategory: boolean;
+  hasExample: boolean;
+  hasTags: boolean;
+  hasSecondaryCategories: boolean;
+}
+
+export interface HealthCheckResponse {
+  results: WordHealth[];
+  summary: {
+    total: number;
+    existing: number;
+    missing: number;
+    missingAudio: number;
+    missingCategory: number;
+    missingExample: number;
+    missingTags: number;
+    missingSecondaryCategories: number;
+  };
+  totalIssues: number;
+}
+
+/**
+ * Check vocabulary health for a list of words
+ * Used by lesson editor to identify missing audio, tags, examples, etc.
+ */
+export async function checkVocabularyHealth(words: string[]): Promise<HealthCheckResponse> {
+  return api.post<HealthCheckResponse>('/v1/vocabulary/admin/health-check', { words });
+}
+
 /**
  * Create a new vocabulary entry (admin only)
  */

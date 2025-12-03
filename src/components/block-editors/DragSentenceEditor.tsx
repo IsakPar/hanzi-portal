@@ -2,31 +2,30 @@
 /**
  * DragSentenceEditor - Edit drag sentence exercise properties
  * 
- * Now includes clickable words that open an overlay for selecting alternatives.
- * Selected alternatives appear underneath each word.
- * 
- * Alternatives sync flow:
- * 1. User selects alternatives via overlay → saved to block.content.wordAlternatives (local)
- * 2. On lesson save → alternatives sync to backend slot_alternatives table (background)
- * 3. Mobile export → pulls from slot_alternatives for structured data
+ * NEW DESIGN: Click-to-order flow
+ * 1. Add all words (correct + distractors) in one list
+ * 2. Click words in order to mark correct sequence (①②③)
+ * 3. Unclicked words = distractors
+ * 4. Pinyin shown under each word
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FormField } from '../shared/FormField';
 import type { ExerciseDragSentenceBlock } from '@/types/lesson';
-import { Plus, Trash2, Cloud, CloudOff } from 'lucide-react';
+import { Plus, RotateCcw, Sparkles, Check, X } from 'lucide-react';
 import { Label } from '@/components/ui/label';
-import { WordAlternativesOverlay } from '../lesson-editor/WordAlternativesOverlay';
-import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
-import { AISuggestButton } from '@/components/ai/AISuggestButton';
-import type { Suggestion } from '@/services/aiSuggestAPI';
-import { syncBlockAlternatives } from '@/services/lessonAlternativesAPI';
+import { getDistractors, flattenDistractors } from '@/services/distractorsAPI';
+import { toast } from '@/hooks/useToast';
+import { cn } from '@/lib/utils';
 
-interface Alternative {
+// Use pinyin-pro for client-side pinyin lookup
+import { pinyin } from 'pinyin-pro';
+
+interface WordItem {
   id: string;
   hanzi: string;
-  pinyin?: string;
-  english?: string;
+  pinyin: string;
+  orderIndex: number | null; // null = distractor, 1/2/3... = correct order position
 }
 
 interface DragSentenceEditorProps {
@@ -34,120 +33,221 @@ interface DragSentenceEditorProps {
   onChange: (field: string, value: any) => void;
   lessonId?: string;
   hskLevel?: number;
-  /** Called when alternatives should be synced to backend (e.g., after save) */
-  onSyncRequest?: () => void;
 }
 
-export function DragSentenceEditor({ block, onChange, lessonId = '', hskLevel = 1 }: DragSentenceEditorProps) {
-  const [correctOrder, setCorrectOrder] = useState<string[]>(block.content.correctOrder || []);
-  const [pool, setPool] = useState<string[]>(block.content.wordPool || []);
-  
-  // Track alternatives per word index (stored in extended content)
-  const extendedContent = block.content as typeof block.content & { wordAlternatives?: Record<number, Alternative[]> };
-  const [wordAlternatives, setWordAlternatives] = useState<Record<number, Alternative[]>>(
-    extendedContent.wordAlternatives || {}
-  );
+export function DragSentenceEditor({ block, onChange, hskLevel = 1 }: DragSentenceEditorProps) {
+  // All words in the exercise (correct + distractors)
+  const [words, setWords] = useState<WordItem[]>([]);
+  const [newWordInput, setNewWordInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
-  // Overlay state
-  const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-  const wordRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  
-  // Sync state
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
-  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  // Initialize from block content
+  useEffect(() => {
+    const correctOrder = block.content.correctOrder || [];
+    const wordPool = block.content.wordPool || [];
+    
+    // Build unified word list
+    const allWords: WordItem[] = [];
+    const seen = new Set<string>();
+    
+    // Add correct words first (with order)
+    correctOrder.forEach((hanzi, idx) => {
+      if (hanzi.trim() && !seen.has(hanzi)) {
+        seen.add(hanzi);
+        allWords.push({
+          id: `word_${Date.now()}_${idx}`,
+          hanzi,
+          pinyin: getPinyin(hanzi),
+          orderIndex: idx + 1,
+        });
+      }
+    });
+    
+    // Add remaining pool words as distractors
+    wordPool.forEach((hanzi, idx) => {
+      if (hanzi.trim() && !seen.has(hanzi)) {
+        seen.add(hanzi);
+        allWords.push({
+          id: `word_${Date.now()}_pool_${idx}`,
+          hanzi,
+          pinyin: getPinyin(hanzi),
+          orderIndex: null,
+        });
+      }
+    });
+    
+    setWords(allWords);
+  }, [block.content.correctOrder, block.content.wordPool]);
 
-  // Sync alternatives to backend (called after lesson save or manually)
-  const syncToBackend = useCallback(async () => {
-    if (!lessonId || lessonId === 'draft' || !block.id) {
-      console.log('[DragSentence] Skipping sync - no lessonId or blockId');
+  // Get pinyin for a hanzi string
+  function getPinyin(hanzi: string): string {
+    try {
+      return pinyin(hanzi, { toneType: 'symbol', type: 'string' });
+    } catch {
+      return '';
+    }
+  }
+
+  // Sync words back to block content
+  const syncToBlock = useCallback((wordList: WordItem[]) => {
+    // Extract correct order (words with orderIndex, sorted)
+    const correctWords = wordList
+      .filter(w => w.orderIndex !== null)
+      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+      .map(w => w.hanzi);
+    
+    // All words go in pool
+    const allHanzi = wordList.map(w => w.hanzi);
+    
+    onChange('content', {
+      ...block.content,
+      correctOrder: correctWords,
+      wordPool: allHanzi,
+    });
+  }, [block.content, onChange]);
+
+  // Click word to toggle/set order
+  const handleWordClick = (wordId: string) => {
+    setWords(prev => {
+      const word = prev.find(w => w.id === wordId);
+      if (!word) return prev;
+
+      let updated: WordItem[];
+      
+      if (word.orderIndex !== null) {
+        // Already in order - remove it
+        const removedIndex = word.orderIndex;
+        updated = prev.map(w => {
+          if (w.id === wordId) {
+            return { ...w, orderIndex: null };
+          }
+          // Decrement higher indices
+          if (w.orderIndex !== null && w.orderIndex > removedIndex) {
+            return { ...w, orderIndex: w.orderIndex - 1 };
+          }
+          return w;
+        });
+      } else {
+        // Not in order - add to end
+        const maxOrder = Math.max(0, ...prev.map(w => w.orderIndex || 0));
+        updated = prev.map(w => 
+          w.id === wordId ? { ...w, orderIndex: maxOrder + 1 } : w
+        );
+      }
+      
+      syncToBlock(updated);
+      return updated;
+    });
+  };
+
+  // Add new word
+  const addWord = (hanzi: string, isCorrect: boolean = false) => {
+    if (!hanzi.trim()) return;
+    
+    // Check if already exists
+    if (words.some(w => w.hanzi === hanzi.trim())) {
+      toast.info('Word exists', 'This word is already in the list');
       return;
     }
     
-    const hasAlternatives = Object.values(wordAlternatives).some(alts => alts.length > 0);
-    if (!hasAlternatives && correctOrder.length === 0) {
-      console.log('[DragSentence] Skipping sync - no content');
+    const newWord: WordItem = {
+      id: `word_${Date.now()}`,
+      hanzi: hanzi.trim(),
+      pinyin: getPinyin(hanzi.trim()),
+      orderIndex: isCorrect ? words.filter(w => w.orderIndex !== null).length + 1 : null,
+    };
+    
+    const updated = [...words, newWord];
+    setWords(updated);
+    syncToBlock(updated);
+    setNewWordInput('');
+  };
+
+  // Remove word
+  const removeWord = (wordId: string) => {
+    const word = words.find(w => w.id === wordId);
+    if (!word) return;
+    
+    let updated = words.filter(w => w.id !== wordId);
+    
+    // Reindex if removed word had an order
+    if (word.orderIndex !== null) {
+      updated = updated.map(w => {
+        if (w.orderIndex !== null && w.orderIndex > word.orderIndex!) {
+          return { ...w, orderIndex: w.orderIndex - 1 };
+        }
+        return w;
+      });
+    }
+    
+    setWords(updated);
+    syncToBlock(updated);
+  };
+
+  // Clear all order
+  const clearOrder = () => {
+    const updated = words.map(w => ({ ...w, orderIndex: null }));
+    setWords(updated);
+    syncToBlock(updated);
+  };
+
+  // AI suggest distractors
+  const handleAISuggest = async () => {
+    const correctWords = words.filter(w => w.orderIndex !== null);
+    if (correctWords.length === 0) {
+      toast.info('Add correct words first', 'Mark some words as correct before adding AI distractors');
       return;
     }
 
-    setSyncStatus('syncing');
+    setAiLoading(true);
     try {
-      console.log('[DragSentence] Syncing to backend:', {
-        blockId: block.id,
-        correctOrder,
-        alternativesCount: Object.keys(wordAlternatives).length,
+      // Use the first correct word as seed
+      const seedWord = correctWords[0].hanzi;
+      const response = await getDistractors({
+        word: seedWord,
+        maxHskLevel: hskLevel,
+        count: 10,
       });
+
+      const suggestions = flattenDistractors(response.distractors);
+      const existingHanzi = new Set(words.map(w => w.hanzi));
       
-      const result = await syncBlockAlternatives(block.id, correctOrder, wordAlternatives);
-      
-      if (result.success) {
-        setSyncStatus('synced');
-        setLastSyncedAt(new Date());
-        console.log('[DragSentence] Sync complete:', result);
+      // Add up to 3 new distractors
+      let added = 0;
+      for (const suggestion of suggestions) {
+        if (added >= 3) break;
+        if (!existingHanzi.has(suggestion.hanzi)) {
+          addWord(suggestion.hanzi, false);
+          added++;
+        }
+      }
+
+      if (added > 0) {
+        toast.success('Distractors added', `Added ${added} AI-suggested words`);
       } else {
-        setSyncStatus('error');
-        console.error('[DragSentence] Sync failed');
+        toast.info('No new words', 'All suggestions already in the list');
       }
     } catch (err) {
-      console.error('[DragSentence] Sync error:', err);
-      setSyncStatus('error');
+      console.error('AI suggest failed:', err);
+      toast.error('AI suggest failed', 'Could not fetch suggestions');
+    } finally {
+      setAiLoading(false);
     }
-  }, [lessonId, block.id, correctOrder, wordAlternatives]);
-
-  // Sync with block content when it changes externally
-  useEffect(() => {
-    setCorrectOrder(block.content.correctOrder || []);
-    setPool(block.content.wordPool || []);
-    const ext = block.content as typeof block.content & { wordAlternatives?: Record<number, Alternative[]> };
-    setWordAlternatives(ext.wordAlternatives || {});
-  }, [block.content]);
-
-  // Open overlay for a word
-  const openOverlay = (index: number) => {
-    const ref = wordRefs.current[index];
-    if (ref) {
-      setAnchorRect(ref.getBoundingClientRect());
-    }
-    setActiveWordIndex(index);
   };
 
-  // Close overlay
-  const closeOverlay = () => {
-    setActiveWordIndex(null);
-    setAnchorRect(null);
-  };
+  // Get correct words in order
+  const correctOrderWords = words
+    .filter(w => w.orderIndex !== null)
+    .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+  
+  // Get distractors
+  const distractorWords = words.filter(w => w.orderIndex === null);
 
   // Helper to update nested content
   const updateContent = (field: string, value: any) => {
     onChange('content', {
       ...block.content,
       [field]: value
-    });
-  };
-
-  const updateCorrectOrder = (newOrder: string[]) => {
-    setCorrectOrder(newOrder);
-    updateContent('correctOrder', newOrder);
-  };
-
-  const updatePool = (newPool: string[]) => {
-    setPool(newPool);
-    updateContent('wordPool', newPool);
-  };
-
-  // Handle alternatives change for a word
-  const handleAlternativesChange = (wordIndex: number, alternatives: Alternative[]) => {
-    const updated = { ...wordAlternatives, [wordIndex]: alternatives };
-    setWordAlternatives(updated);
-    updateContent('wordAlternatives', updated);
-    
-    // Also add alternative hanzi to the word pool if not already there
-    alternatives.forEach(alt => {
-      if (!pool.includes(alt.hanzi)) {
-        const newPool = [...pool, alt.hanzi];
-        setPool(newPool);
-        updateContent('wordPool', newPool);
-      }
     });
   };
 
@@ -161,205 +261,165 @@ export function DragSentenceEditor({ block, onChange, lessonId = '', hskLevel = 
         placeholder="Build the correct sentence"
       />
 
-      {/* Correct Word Order with Click-to-Open Alternatives */}
-      <div className="space-y-2">
-        <Label>
-          Correct Word Order <span className="text-destructive">*</span>
-        </Label>
-        <p className="text-xs text-muted-foreground mb-2">
-          Click any word to add alternatives. Selected alternatives appear below.
-        </p>
+      {/* Main Word Area */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label>
+            Words <span className="text-destructive">*</span>
+          </Label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={clearOrder}
+              disabled={correctOrderWords.length === 0}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded disabled:opacity-50"
+            >
+              <RotateCcw size={12} />
+              Clear Order
+            </button>
+            <button
+              type="button"
+              onClick={handleAISuggest}
+              disabled={aiLoading || correctOrderWords.length === 0}
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 rounded disabled:opacity-50"
+            >
+              <Sparkles size={12} className={aiLoading ? 'animate-spin' : ''} />
+              {aiLoading ? 'Loading...' : 'AI Distractors'}
+            </button>
+          </div>
+        </div>
         
-        {/* Word Input Grid */}
-        <div className="space-y-4">
-          {correctOrder.map((word, index) => {
-            const alts = wordAlternatives[index] || [];
-            return (
-              <div key={index} className="space-y-2">
-                {/* Word Input Row */}
-                <div className="flex gap-2 items-center">
-                  <input
-                    type="text"
-                    value={word}
-                    onChange={(e) => {
-                      const newOrder = [...correctOrder];
-                      newOrder[index] = e.target.value;
-                      updateCorrectOrder(newOrder);
-                    }}
-                    placeholder={`Word ${index + 1}`}
-                    className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                  
-                  {/* Click to open alternatives overlay */}
-                  <button
-                    ref={(el) => { wordRefs.current[index] = el; }}
-                    type="button"
-                    onClick={() => word.trim() && openOverlay(index)}
-                    disabled={!word.trim()}
-                    className="px-3 py-2 border rounded-md hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                    title="Click to add alternatives"
-                  >
-                    <Plus size={14} />
-                    <span className="text-sm">
-                      {alts.length > 0 ? `${alts.length} alt${alts.length > 1 ? 's' : ''}` : 'Add'}
-                    </span>
-                  </button>
+        <p className="text-xs text-muted-foreground">
+          Click words in order to mark the correct sentence. Unclicked words become distractors.
+        </p>
 
-                  {/* Remove Word Button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateCorrectOrder(correctOrder.filter((_, i) => i !== index));
-                      const updatedAlts = { ...wordAlternatives };
-                      delete updatedAlts[index];
-                      setWordAlternatives(updatedAlts);
-                      updateContent('wordAlternatives', updatedAlts);
-                    }}
-                    className="p-2 hover:bg-red-50 text-red-400 hover:text-red-600 rounded-md transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-
-                {/* Show selected alternatives underneath */}
-                {alts.length > 0 && (
-                  <div className="ml-2 pl-3 border-l-2 border-indigo-200">
-                    <div className="text-xs text-muted-foreground mb-1">Alternatives:</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {alts.map((alt) => (
-                        <span
-                          key={alt.id}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md text-sm border border-indigo-200"
-                          title={alt.pinyin ? `${alt.pinyin} - ${alt.english}` : undefined}
-                        >
-                          {alt.hanzi}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = alts.filter(a => a.id !== alt.id);
-                              handleAlternativesChange(index, updated);
-                            }}
-                            className="hover:text-red-500 ml-0.5"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
+        {/* Word Grid */}
+        <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-lg min-h-[100px]">
+          {words.map((word) => (
+            <div
+              key={word.id}
+              className="relative group"
+            >
+              <button
+                type="button"
+                onClick={() => handleWordClick(word.id)}
+                className={cn(
+                  "flex flex-col items-center px-3 py-2 rounded-lg border-2 transition-all min-w-[60px]",
+                  word.orderIndex !== null
+                    ? "bg-green-50 border-green-400 text-green-800 shadow-sm"
+                    : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"
+                )}
+              >
+                {/* Order badge */}
+                {word.orderIndex !== null && (
+                  <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                    {word.orderIndex}
                   </div>
                 )}
-              </div>
-            );
-          })}
+                
+                {/* Hanzi */}
+                <span className="text-lg font-medium">{word.hanzi}</span>
+                
+                {/* Pinyin */}
+                <span className="text-xs text-gray-500">{word.pinyin}</span>
+              </button>
+              
+              {/* Delete button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeWord(word.id);
+                }}
+                className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ))}
           
+          {words.length === 0 && (
+            <div className="w-full text-center text-gray-400 py-4">
+              Add words below to get started
+            </div>
+          )}
+        </div>
+
+        {/* Add word input */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newWordInput}
+            onChange={(e) => setNewWordInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addWord(newWordInput);
+              }
+            }}
+            placeholder="Add word (e.g., 你好)..."
+            className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
           <button
             type="button"
-            onClick={() => updateCorrectOrder([...correctOrder, ''])}
-            className="flex items-center justify-center gap-2 w-full p-2 border border-dashed rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-sm"
+            onClick={() => addWord(newWordInput)}
+            disabled={!newWordInput.trim()}
+            className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1"
           >
             <Plus size={14} />
-            Add Word
+            Add
           </button>
         </div>
       </div>
 
-      {/* Word Alternatives Overlay */}
-      {activeWordIndex !== null && correctOrder[activeWordIndex] && (
-        <WordAlternativesOverlay
-          word={correctOrder[activeWordIndex]}
-          hskLevel={hskLevel}
-          selectedAlternatives={wordAlternatives[activeWordIndex] || []}
-          onAlternativesChange={(alts) => handleAlternativesChange(activeWordIndex, alts)}
-          onClose={closeOverlay}
-          anchorRect={anchorRect}
-          sentenceWords={correctOrder.filter(w => w.trim())}
-          wordIndex={activeWordIndex}
-        />
-      )}
-
-      {/* Word Pool - Auto-populated from correct order + alternatives */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>
-            Word Pool (auto-generated)
-          </Label>
-          {correctOrder.length > 0 && (
-            <AISuggestButton
-              context="distractor-word"
-              correctAnswer={correctOrder.join('')}
-              hskLevel={hskLevel}
-              exclude={pool}
-              count={5}
-              onSelect={(suggestion: Suggestion) => {
-                if (!pool.includes(suggestion.text)) {
-                  updatePool([...pool, suggestion.text]);
-                }
-              }}
-              size="md"
-            />
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Includes correct words + alternatives. Click ✨ for AI-suggested distractors.
-        </p>
-        <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg min-h-12">
-          {pool.map((word, index) => (
-            <span
-              key={index}
-              className="inline-flex items-center gap-1 px-2 py-1 bg-white border rounded text-sm"
-            >
-              {word}
-              <InlineAudioStatus
-                text={word}
-                audioUrl={undefined}
-                lessonId={lessonId || 'draft'}
-                blockId={block.id}
-                optionId={`pool-${index}`}
-                onAudioSaved={() => {}}
-                disabled={!lessonId}
-              />
-              {!correctOrder.includes(word) && !Object.values(wordAlternatives).flat().some(a => a.hanzi === word) && (
-                <button
-                  type="button"
-                  onClick={() => updatePool(pool.filter((_, i) => i !== index))}
-                  className="text-gray-400 hover:text-red-500 ml-1"
-                >
-                  ×
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
+      {/* Preview Section */}
+      <div className="space-y-3 pt-2">
+        <Label>Preview</Label>
         
-        {/* Add extra distractors */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Add distractor word..."
-            className="flex-1 px-3 py-2 border rounded-md text-sm"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const input = e.target as HTMLInputElement;
-                if (input.value.trim() && !pool.includes(input.value.trim())) {
-                  updatePool([...pool, input.value.trim()]);
-                  input.value = '';
-                }
-              }
-            }}
-          />
-          <button
-            type="button"
-            onClick={(e) => {
-              const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
-              if (input.value.trim() && !pool.includes(input.value.trim())) {
-                updatePool([...pool, input.value.trim()]);
-                input.value = '';
-              }
-            }}
-            className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-sm"
-          >
-            Add
-          </button>
+        {/* Correct Order */}
+        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+          <div className="flex items-center gap-2 mb-2">
+            <Check size={14} className="text-green-600" />
+            <span className="text-xs font-medium text-green-700">Correct Sentence</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {correctOrderWords.length > 0 ? (
+              correctOrderWords.map((word, idx) => (
+                <span key={word.id} className="flex items-center">
+                  <span className="px-2 py-1 bg-white rounded border border-green-300 text-sm">
+                    {word.hanzi}
+                  </span>
+                  {idx < correctOrderWords.length - 1 && (
+                    <span className="mx-1 text-green-400">→</span>
+                  )}
+                </span>
+              ))
+            ) : (
+              <span className="text-gray-400 text-sm italic">Click words above to set correct order</span>
+            )}
+          </div>
+        </div>
+
+        {/* Distractors */}
+        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2 mb-2">
+            <X size={14} className="text-gray-500" />
+            <span className="text-xs font-medium text-gray-600">Distractors ({distractorWords.length})</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {distractorWords.length > 0 ? (
+              distractorWords.map((word) => (
+                <span
+                  key={word.id}
+                  className="px-2 py-1 bg-white rounded border border-gray-200 text-sm text-gray-600"
+                >
+                  {word.hanzi}
+                </span>
+              ))
+            ) : (
+              <span className="text-gray-400 text-sm italic">Words not in correct order appear here</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -377,80 +437,6 @@ export function DragSentenceEditor({ block, onChange, lessonId = '', hskLevel = 
         placeholder="Explain why this is correct..."
         multiline
       />
-
-      {/* Summary of alternatives */}
-      {Object.keys(wordAlternatives).length > 0 && (
-        <div className="mt-4 p-3 bg-purple-50 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-medium text-purple-700">
-              ✨ Alternatives Summary
-            </div>
-            
-            {/* Sync to Backend Button */}
-            {lessonId && lessonId !== 'draft' && (
-              <button
-                type="button"
-                onClick={syncToBackend}
-                disabled={syncStatus === 'syncing'}
-                className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded transition-colors ${
-                  syncStatus === 'synced' 
-                    ? 'bg-green-100 text-green-700' 
-                    : syncStatus === 'error'
-                    ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                    : syncStatus === 'syncing'
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-                title={lastSyncedAt ? `Last synced: ${lastSyncedAt.toLocaleTimeString()}` : 'Sync to backend for mobile export'}
-              >
-                {syncStatus === 'syncing' ? (
-                  <>
-                    <Cloud size={12} className="animate-pulse" />
-                    Syncing...
-                  </>
-                ) : syncStatus === 'synced' ? (
-                  <>
-                    <Cloud size={12} />
-                    Synced
-                  </>
-                ) : syncStatus === 'error' ? (
-                  <>
-                    <CloudOff size={12} />
-                    Retry
-                  </>
-                ) : (
-                  <>
-                    <Cloud size={12} />
-                    Sync
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-          
-          <div className="space-y-1 text-sm">
-            {correctOrder.map((word, index) => {
-              const alts = wordAlternatives[index];
-              if (!alts || alts.length === 0) return null;
-              return (
-                <div key={index} className="flex items-center gap-2">
-                  <span className="font-medium">{word}:</span>
-                  <span className="text-purple-600">
-                    {alts.map(a => a.hanzi).join(', ')}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          
-          {/* Sync status hint */}
-          {lessonId && lessonId !== 'draft' && syncStatus === 'idle' && (
-            <p className="text-xs text-purple-400 mt-2">
-              💡 Click "Sync" to save alternatives to backend for mobile export
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 }
