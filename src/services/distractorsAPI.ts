@@ -28,6 +28,7 @@ export interface DistractorSource {
   category: string;
   pos?: string | null;
   tonePattern?: string | null;
+  secondaryCategories?: string[] | null;
   hskLevel: number;
 }
 
@@ -35,6 +36,7 @@ export interface DistractorResponse {
   source: DistractorSource;
   distractors: {
     sameCategory: VocabWord[];
+    sameSecondaryCategory: VocabWord[];
     samePos: VocabWord[];
     sameTone: VocabWord[];
     similarLength: VocabWord[];
@@ -48,7 +50,7 @@ export interface DistractorRequest {
   word?: string;
   maxHskLevel?: number;
   count?: number;
-  strategies?: ('same-category' | 'same-pos' | 'same-tone' | 'similar-length' | 'semantic')[];
+  strategies?: ('same-category' | 'same-secondary-category' | 'same-pos' | 'same-tone' | 'similar-length' | 'semantic')[];
 }
 
 export interface TagRequest {
@@ -112,7 +114,7 @@ export async function getMetadataStats(): Promise<MetadataStats> {
 
 /**
  * Flatten all distractors into a single ordered array
- * Prioritizes: sameCategory → samePos → sameTone → similarLength → semantic
+ * Prioritizes: sameCategory → sameSecondaryCategory → samePos → sameTone → similarLength → semantic
  */
 export function flattenDistractors(distractors: DistractorResponse['distractors']): VocabWord[] {
   const seen = new Set<string>();
@@ -127,6 +129,7 @@ export function flattenDistractors(distractors: DistractorResponse['distractors'
   };
 
   addUnique(distractors.sameCategory);
+  addUnique(distractors.sameSecondaryCategory || []);
   addUnique(distractors.samePos);
   addUnique(distractors.sameTone);
   addUnique(distractors.similarLength);

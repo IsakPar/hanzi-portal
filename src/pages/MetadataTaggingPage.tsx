@@ -26,9 +26,10 @@ import { toast } from '@/hooks/useToast';
 interface VocabWithMeta extends VocabularyEntry {
   pos?: string | null;
   tonePattern?: string | null;
+  secondaryCategories?: string[] | null;
 }
 
-type FilterMode = 'missing-pos' | 'missing-tone' | 'missing-any' | 'all';
+type FilterMode = 'missing-pos' | 'missing-tone' | 'missing-secondary' | 'missing-any' | 'all';
 
 // ═══════════════════════════════════════════════════════════
 // HELPERS
@@ -87,6 +88,8 @@ export function MetadataTaggingPage() {
   
   // Batch operations
   const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchSecondaryProcessing, setBatchSecondaryProcessing] = useState(false);
+  const [secondaryStats, setSecondaryStats] = useState<{ total: number; withSecondary: number; percent: number } | null>(null);
 
   // ─────────────────────────────────────────────────────────
   // LOAD DATA
@@ -116,8 +119,18 @@ export function MetadataTaggingPage() {
         filtered = filtered.filter(v => !v.pos);
       } else if (filterMode === 'missing-tone') {
         filtered = filtered.filter(v => !v.tonePattern);
+      } else if (filterMode === 'missing-secondary') {
+        filtered = filtered.filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0);
       } else if (filterMode === 'missing-any') {
-        filtered = filtered.filter(v => !v.pos || !v.tonePattern);
+        filtered = filtered.filter(v => !v.pos || !v.tonePattern || !v.secondaryCategories || v.secondaryCategories.length === 0);
+      }
+      
+      // Load secondary category stats
+      try {
+        const secStats = await api.get<{ total: number; withSecondaryCategories: number; percent: number }>('/v1/vocabulary/admin/secondary-category-stats');
+        setSecondaryStats({ total: secStats.total, withSecondary: secStats.withSecondaryCategories, percent: secStats.percent });
+      } catch {
+        // Silently ignore if endpoint not available
       }
       
       setVocabulary(filtered);
@@ -242,6 +255,42 @@ export function MetadataTaggingPage() {
     }
   };
 
+  const handleBatchTagSecondaryCategories = async () => {
+    setBatchSecondaryProcessing(true);
+    
+    try {
+      const currentPage = vocabulary.slice(page * pageSize, (page + 1) * pageSize);
+      const wordIds = currentPage
+        .filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0)
+        .map(v => v.id);
+      
+      if (wordIds.length === 0) {
+        toast.info('Nothing to tag', 'All words on this page already have secondary categories');
+        return;
+      }
+
+      const result = await api.post<{
+        results: { wordId: string; hanzi: string; secondaryCategories: string[] | null; success: boolean }[];
+        summary: { successful: number; failed: number };
+      }>('/v1/vocabulary/admin/bulk-tag-secondary-categories', { wordIds });
+
+      // Update local state with new secondary categories
+      setVocabulary(prev => prev.map(v => {
+        const tagResult = result.results.find(r => r.wordId === v.id);
+        if (tagResult?.success && tagResult.secondaryCategories) {
+          return { ...v, secondaryCategories: tagResult.secondaryCategories };
+        }
+        return v;
+      }));
+
+      toast.success('Batch complete', `Tagged ${result.summary.successful} words with secondary categories`);
+    } catch (err) {
+      toast.error('Batch failed', (err as Error).message);
+    } finally {
+      setBatchSecondaryProcessing(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────
   // PAGINATION
   // ─────────────────────────────────────────────────────────
@@ -285,7 +334,7 @@ export function MetadataTaggingPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="mb-6 grid grid-cols-4 gap-4">
+        <div className="mb-6 grid grid-cols-5 gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="text-3xl font-bold text-gray-900">{stats.total}</div>
             <div className="text-sm text-gray-500">Total Words</div>
@@ -314,6 +363,18 @@ export function MetadataTaggingPage() {
               />
             </div>
           </div>
+          <div className="bg-white rounded-xl border border-pink-200 p-4">
+            <div className="text-3xl font-bold text-pink-600">{secondaryStats?.withSecondary || 0}</div>
+            <div className="text-sm text-gray-500">
+              With Secondary ({secondaryStats?.percent || 0}%)
+            </div>
+            <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-pink-500 rounded-full transition-all"
+                style={{ width: `${secondaryStats?.percent || 0}%` }}
+              />
+            </div>
+          </div>
           <div className="bg-white rounded-xl border border-amber-200 p-4">
             <div className="text-3xl font-bold text-amber-600">{vocabulary.length}</div>
             <div className="text-sm text-gray-500">
@@ -338,6 +399,7 @@ export function MetadataTaggingPage() {
           <option value="missing-any">Missing Any Metadata</option>
           <option value="missing-pos">Missing POS</option>
           <option value="missing-tone">Missing Tone Pattern</option>
+          <option value="missing-secondary">Missing Secondary Categories</option>
           <option value="all">All Vocabulary</option>
         </select>
 
@@ -365,7 +427,21 @@ export function MetadataTaggingPage() {
           ) : (
             <Zap className="w-4 h-4 mr-2" />
           )}
-          Compute All Tones (This Page)
+          Compute Tones
+        </Button>
+
+        <Button
+          variant="outline"
+          onClick={handleBatchTagSecondaryCategories}
+          disabled={batchSecondaryProcessing}
+          className="border-pink-300 text-pink-700"
+        >
+          {batchSecondaryProcessing ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Bot className="w-4 h-4 mr-2" />
+          )}
+          AI Tag Secondary (This Page)
         </Button>
 
         <Button variant="outline" onClick={loadData}>

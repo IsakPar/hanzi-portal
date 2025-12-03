@@ -17,6 +17,7 @@ export interface VocabularyEntry {
   // Pedagogic metadata for distractor generation
   pos?: string | null;        // part of speech: noun, verb, adj, etc.
   tonePattern?: string | null; // e.g., "1-1", "3-3", "2-4"
+  secondaryCategories?: string[] | null; // e.g., ["people", "relationships"]
   // Audio and examples
   wordAudioR2Key?: string | null;
   exampleChinese?: string | null;
@@ -43,6 +44,7 @@ export interface VocabularySearchParams {
   query?: string;
   hsk_level?: number;
   category?: string;
+  lesson_id?: string;  // Filter by lesson's targetVocabulary
   limit?: number;
   offset?: number;
   sort?: 'hanzi' | 'pinyin' | 'hsk_level' | 'category';

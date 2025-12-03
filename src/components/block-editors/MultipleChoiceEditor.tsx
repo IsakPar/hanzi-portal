@@ -89,11 +89,13 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
 
     setSmartFillLoading(true);
     try {
+      console.log('[MCQ Smart Fill] Fetching distractors for:', correctAnswer);
       const response = await getDistractors({
         word: correctAnswer,
         maxHskLevel: hskLevel,
         count: 10,
       });
+      console.log('[MCQ Smart Fill] Response:', response);
 
       // Get flattened, prioritized distractors
       const allDistractors = flattenDistractors(response.distractors);
@@ -127,8 +129,16 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
 
       updateOptions(newOptions);
       toast.success('Smart Fill complete', `Added ${distractorIndex} distractors`);
-    } catch (err) {
-      toast.error('Smart Fill failed', (err as Error).message);
+    } catch (err: unknown) {
+      const error = err as Error & { status?: number };
+      console.error('[MCQ Smart Fill] Error:', error);
+      
+      let errorMessage = error.message || 'Unknown error';
+      if (error.status === 404 || errorMessage.includes('not found')) {
+        errorMessage = `"${correctAnswer}" isn't in the vocabulary database. Add it first or use a different word.`;
+      }
+      
+      toast.error('Smart Fill failed', errorMessage);
     } finally {
       setSmartFillLoading(false);
     }
@@ -155,14 +165,34 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
     setAlternativesData(null);
 
     try {
+      console.log('[MCQ] Fetching distractors for:', optionText, 'HSK:', hskLevel);
       const response = await getDistractors({
         word: optionText,
         maxHskLevel: hskLevel,
         count: 20,
       });
+      console.log('[MCQ] Distractors response:', response);
       setAlternativesData(response);
-    } catch (err) {
-      toast.error('Failed to load alternatives', (err as Error).message);
+    } catch (err: unknown) {
+      const error = err as Error & { status?: number; response?: { error?: string } };
+      console.error('[MCQ] Distractors error:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = error.message || 'Unknown error';
+      let errorTitle = 'Failed to load alternatives';
+      
+      if (error.status === 404 || errorMessage.includes('not found')) {
+        errorTitle = 'Word not in vocabulary';
+        errorMessage = `"${optionText}" isn't in the HSK vocabulary database. Try a different word or add it to vocabulary first.`;
+      } else if (error.status === 401) {
+        errorTitle = 'Authentication error';
+        errorMessage = 'Please refresh the page and try again.';
+      } else if (error.status === 500 || errorMessage.includes('secondary_categories')) {
+        errorTitle = 'Database issue';
+        errorMessage = 'There may be a database migration pending. Contact support if this persists.';
+      }
+      
+      toast.error(errorTitle, errorMessage);
       setShowAlternatives(null);
     } finally {
       setAlternativesLoading(false);

@@ -9,7 +9,7 @@
  * - Related Meaning (AI)
  */
 
-import { X, Folder, Type, Music, Ruler, Sparkles, RefreshCw } from 'lucide-react';
+import { X, Folder, Tag, Type, Music, Ruler, Sparkles, RefreshCw } from 'lucide-react';
 import type { DistractorSource, VocabWord, DistractorResponse } from '@/services/distractorsAPI';
 import { cn } from '@/lib/utils';
 
@@ -28,11 +28,12 @@ interface CategorySectionProps {
   icon: React.ReactNode;
   words: VocabWord[];
   onSelect: (word: string, vocabWord: VocabWord) => void;
-  color: 'green' | 'blue' | 'amber' | 'gray' | 'purple';
+  color: 'green' | 'pink' | 'blue' | 'amber' | 'gray' | 'purple';
 }
 
 const colorClasses = {
   green: 'bg-green-50 text-green-700 hover:bg-green-100 border-green-200',
+  pink: 'bg-pink-50 text-pink-700 hover:bg-pink-100 border-pink-200',
   blue: 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200',
   amber: 'bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200',
   gray: 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-200',
@@ -78,6 +79,7 @@ export function AlternativesPanel({
 }: AlternativesPanelProps) {
   const hasAny = 
     distractors.sameCategory.length > 0 ||
+    (distractors.sameSecondaryCategory?.length || 0) > 0 ||
     distractors.samePos.length > 0 ||
     distractors.sameTone.length > 0 ||
     distractors.similarLength.length > 0 ||
@@ -136,6 +138,17 @@ export function AlternativesPanel({
               onSelect={onSelect}
               color="green"
             />
+
+            {/* Same Secondary Category */}
+            {distractors.sameSecondaryCategory && distractors.sameSecondaryCategory.length > 0 && (
+              <CategorySection
+                title="Secondary Category"
+                icon={<Tag size={14} />}
+                words={distractors.sameSecondaryCategory}
+                onSelect={onSelect}
+                color="pink"
+              />
+            )}
 
             {/* Same POS */}
             <CategorySection

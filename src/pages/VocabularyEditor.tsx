@@ -27,7 +27,15 @@ import {
 import { tagWord } from "@/services/distractorsAPI";
 import { toast } from "@/hooks/useToast";
 import { processAudioAtSpeed } from "@/utils/audioProcessor";
-import { CDN_BASE_URL } from "@/services/api";
+import api, { CDN_BASE_URL } from "@/services/api";
+
+interface VocabLesson {
+  id: string;
+  title: string;
+  hskLevel: number;
+  lessonNumber: number;
+  contentStatus: string;
+}
 
 // Voice options for ElevenLabs
 const VOICES = [
@@ -62,12 +70,29 @@ export function VocabularyEditor() {
   // Metadata state
   const [pos, setPos] = useState<string>("");
   const [tonePattern, setTonePattern] = useState<string>("");
+  const [secondaryCategories, setSecondaryCategories] = useState<string[]>([]);
   const [aiTagging, setAiTagging] = useState(false);
+  const [aiTaggingSecondary, setAiTaggingSecondary] = useState(false);
+  
+  // Lessons using this word
+  const [usedInLessons, setUsedInLessons] = useState<VocabLesson[]>([]);
+  const [firstLessonId, setFirstLessonId] = useState<string | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<{
     pos?: { value: string; suggested: boolean };
     tonePattern?: { value: string; computed: boolean };
     category?: { value: string; suggested: boolean };
+    secondaryCategories?: { value: string[]; suggested: boolean };
   } | null>(null);
+
+  // Available secondary categories
+  const SECONDARY_CATEGORY_OPTIONS = [
+    'people', 'relationships', 'emotions', 'actions', 'descriptive',
+    'time', 'location', 'quantity', 'question', 'polite',
+    'formal', 'informal', 'spoken', 'written', 'idiom',
+    'measure', 'direction', 'color', 'size', 'state',
+    'weather', 'nature', 'body', 'health', 'education',
+    'work', 'travel', 'communication', 'daily-life', 'culture',
+  ];
   
   // AI generation state
   const [generatingExample, setGeneratingExample] = useState(false);
@@ -107,6 +132,19 @@ export function VocabularyEditor() {
       // Load metadata
       setPos(data.pos || "");
       setTonePattern(data.tonePattern || "");
+      setSecondaryCategories((data as any).secondaryCategories || []);
+      
+      // Load lessons that use this word
+      try {
+        const lessonsData = await api.get<{
+          lessons: VocabLesson[];
+          firstLessonId: string | null;
+        }>(`/v1/vocabulary/${id}/lessons`);
+        setUsedInLessons(lessonsData.lessons);
+        setFirstLessonId(lessonsData.firstLessonId);
+      } catch {
+        // Ignore - lessons data is optional
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load entry");
     } finally {
@@ -188,6 +226,54 @@ export function VocabularyEditor() {
     const computed = extractTonePatternFromPinyin(entry.pinyin);
     setTonePattern(computed);
     toast.success("Tone pattern computed", computed);
+  }
+
+  async function handleAiSuggestSecondaryCategories() {
+    if (isNew || !id) {
+      toast.error("Save first", "Please save the entry before AI tagging");
+      return;
+    }
+
+    setAiTaggingSecondary(true);
+
+    try {
+      // Import API_BASE_URL from api service
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.studio.polymasterlabs.com';
+      const response = await fetch(`${API_BASE_URL}/v1/vocabulary/admin/bulk-tag-secondary-categories`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('hm_access_token')}`,
+        },
+        body: JSON.stringify({ wordIds: [id] }),
+      });
+
+      const result = await response.json();
+      
+      if (result.results?.[0]?.success) {
+        const cats = result.results[0].secondaryCategories || [];
+        setSecondaryCategories(cats);
+        setAiSuggestions(prev => ({
+          ...prev,
+          secondaryCategories: { value: cats, suggested: true },
+        }));
+        toast.success("AI suggested categories", cats.length > 0 ? cats.join(', ') : "No categories suggested");
+      } else {
+        toast.error("AI tagging failed", result.results?.[0]?.error || result.error || "Unknown error");
+      }
+    } catch (err) {
+      toast.error("AI tagging failed", (err as Error).message);
+    } finally {
+      setAiTaggingSecondary(false);
+    }
+  }
+
+  function toggleSecondaryCategory(cat: string) {
+    setSecondaryCategories(prev => 
+      prev.includes(cat) 
+        ? prev.filter(c => c !== cat)
+        : [...prev, cat]
+    );
   }
 
   // === AI EXAMPLE GENERATION ===
@@ -371,6 +457,7 @@ export function VocabularyEditor() {
         // Pedagogic metadata
         pos: pos || undefined,
         tonePattern: tonePattern || undefined,
+        secondaryCategories: secondaryCategories.length > 0 ? secondaryCategories : undefined,
         // Audio and examples
         wordAudioR2Key: entry.wordAudioR2Key || undefined,
         exampleChinese: entry.exampleChinese || undefined,
@@ -827,6 +914,78 @@ export function VocabularyEditor() {
               </div>
             </div>
 
+            {/* Secondary Categories */}
+            <div className="bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <Label className="text-pink-900 flex items-center gap-2">
+                  <span className="text-lg">🏷️</span>
+                  Secondary Categories
+                </Label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAiSuggestSecondaryCategories}
+                  disabled={aiTaggingSecondary || isNew}
+                  className="border-pink-300 text-pink-700 hover:bg-pink-100"
+                >
+                  {aiTaggingSecondary ? (
+                    <>
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      AI Suggesting...
+                    </>
+                  ) : (
+                    <>
+                      <Bot className="w-3 h-3 mr-1" />
+                      AI Suggest
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-pink-700 mb-3">
+                Select additional semantic categories for better distractor generation
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {SECONDARY_CATEGORY_OPTIONS.map((cat) => {
+                  const isSelected = secondaryCategories.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => toggleSecondaryCategory(cat)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                        isSelected
+                          ? 'bg-pink-500 text-white shadow-sm'
+                          : 'bg-white text-gray-600 border border-gray-200 hover:border-pink-300 hover:text-pink-700'
+                      }`}
+                    >
+                      {cat}
+                      {isSelected && <span className="ml-1">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {secondaryCategories.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-pink-200 flex items-center justify-between">
+                  <span className="text-xs text-pink-700">
+                    Selected: <strong>{secondaryCategories.join(', ')}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSecondaryCategories([])}
+                    className="text-xs text-pink-600 hover:text-pink-800"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
+              {aiSuggestions?.secondaryCategories && (
+                <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  AI suggested: {aiSuggestions.secondaryCategories.value.join(', ') || 'None'}
+                </p>
+              )}
+            </div>
+
             {/* Metadata Status Summary */}
             <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
               <Label className="text-green-900 flex items-center gap-2 mb-2">
@@ -864,10 +1023,71 @@ export function VocabularyEditor() {
                     Category: {entry.category || "Not set"}
                   </span>
                 </div>
+                <div className="flex items-center gap-2">
+                  {secondaryCategories.length > 0 ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <X className="w-4 h-4 text-gray-400" />
+                  )}
+                  <span className={secondaryCategories.length > 0 ? "text-green-700" : "text-gray-500"}>
+                    Secondary: {secondaryCategories.length > 0 ? `${secondaryCategories.length} tags` : "Not set"}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* SECTION 4: USED IN LESSONS */}
+        {!isNew && usedInLessons.length > 0 && (
+          <div className="border-t border-gray-200 pt-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <span className="bg-indigo-100 text-indigo-700 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">4</span>
+              Used in Lessons
+              <span className="text-xs text-gray-400 font-normal ml-2">
+                {usedInLessons.length} lesson{usedInLessons.length !== 1 ? 's' : ''}
+              </span>
+            </h2>
+            
+            <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-4">
+              <div className="space-y-2">
+                {usedInLessons.map((lesson) => (
+                  <button
+                    key={lesson.id}
+                    onClick={() => navigate(`/lessons/${lesson.id}/edit`)}
+                    className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
+                      lesson.id === firstLessonId
+                        ? 'bg-indigo-100 hover:bg-indigo-200 border border-indigo-300'
+                        : 'bg-white hover:bg-gray-50 border border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="text-lg">📚</div>
+                      <div className="text-left">
+                        <div className="font-medium text-gray-900">
+                          HSK{lesson.hskLevel} L{lesson.lessonNumber}: {lesson.title}
+                        </div>
+                        {lesson.id === firstLessonId && (
+                          <div className="text-xs text-indigo-600">First introduction</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        lesson.contentStatus === 'live' ? 'bg-green-100 text-green-700' :
+                        lesson.contentStatus === 'staging' ? 'bg-blue-100 text-blue-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {lesson.contentStatus}
+                      </span>
+                      <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-3 pt-6 border-t border-gray-200">
@@ -900,6 +1120,9 @@ export function VocabularyEditor() {
                 {entry.rowNum && <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-700 font-mono">#{entry.rowNum}</span>}
                 {pos && <span className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700">{pos}</span>}
                 {tonePattern && <span className="text-xs px-2 py-1 rounded bg-pink-100 text-pink-700 font-mono">{tonePattern}</span>}
+                {secondaryCategories.map(cat => (
+                  <span key={cat} className="text-xs px-2 py-1 rounded bg-rose-100 text-rose-700">{cat}</span>
+                ))}
               </div>
             </div>
 

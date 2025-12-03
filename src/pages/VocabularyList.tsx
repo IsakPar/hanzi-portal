@@ -16,6 +16,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   Bot,
+  Tag,
+  Loader2,
+  BookOpen,
 } from "lucide-react";
 import {
   searchVocabulary,
@@ -25,11 +28,26 @@ import {
   HSK_LEVELS,
   type VocabularyEntry,
 } from "@/services/vocabularyAPI";
+import api from "@/services/api";
 import { useGlobalConfirm } from "@/hooks/useConfirm";
 import { toast } from "@/hooks/useToast";
 import { SkeletonVocabularyTable } from "@/components/ui/skeleton";
 import { EmptyVocabulary, EmptySearchResults } from "@/components/ui/empty-state";
 import { VirtualizedTable, type VirtualizedTableColumn } from "@/components/ui/virtualized-table";
+import { BulkTagProgressModal } from "@/components/ui/BulkTagProgressModal";
+import { InlineTagEditor } from "@/components/ui/InlineTagEditor";
+
+interface LessonOption {
+  id: string;
+  title: string;
+  lessonNumber: number;
+  hskLevel: number;
+  contentStatus?: string;
+  vocabCount?: number;
+  withAudio?: number;
+  withSecondary?: number;
+  untaggedCount?: number;
+}
 
 export function VocabularyList() {
   const navigate = useNavigate();
@@ -52,15 +70,50 @@ export function VocabularyList() {
   const [filterHasAudio, setFilterHasAudio] = useState(false);
   const [filterHasExample, setFilterHasExample] = useState(false);
   const [filterIncomplete, setFilterIncomplete] = useState(false);
+  const [filterMissingSecondary, setFilterMissingSecondary] = useState(false);
+  
+  // Lesson filter
+  const [lessons, setLessons] = useState<LessonOption[]>([]);
+  const [selectedLesson, setSelectedLesson] = useState<string>("");
+  
+  // Bulk operations
+  const [bulkTagging] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [bulkTagWordIds, setBulkTagWordIds] = useState<string[]>([]);
+  
+  // Inline tag editor
+  const [inlineEditVocab, setInlineEditVocab] = useState<{
+    id: string;
+    hanzi: string;
+    tags: string[];
+    position: { top: number; left: number };
+  } | null>(null);
 
   useEffect(() => {
     loadCategories();
+    loadLessons();
   }, []);
+
+  async function loadLessons() {
+    try {
+      // Use summary endpoint which includes vocab stats
+      const response = await api.get<{ lessons: LessonOption[] }>('/v1/lessons/summary');
+      // Sort by HSK level then lesson number
+      const sorted = (response.lessons || []).sort((a, b) => {
+        if (a.hskLevel !== b.hskLevel) return a.hskLevel - b.hskLevel;
+        return a.lessonNumber - b.lessonNumber;
+      });
+      setLessons(sorted);
+    } catch {
+      // Ignore - lessons filter is optional
+    }
+  }
 
   useEffect(() => {
     loadVocabulary();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, selectedHSK, selectedCategory, page]);
+  }, [searchTerm, selectedHSK, selectedCategory, selectedLesson, page]);
 
   // Filter vocabulary by completeness (client-side)
   const filteredVocabulary = useMemo(() => {
@@ -75,9 +128,90 @@ export function VocabularyList() {
     if (filterIncomplete) {
       result = result.filter(v => !v.wordAudioR2Key || !v.exampleChinese);
     }
+    if (filterMissingSecondary) {
+      result = result.filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0);
+    }
     
     return result;
-  }, [vocabulary, filterHasAudio, filterHasExample, filterIncomplete]);
+  }, [vocabulary, filterHasAudio, filterHasExample, filterIncomplete, filterMissingSecondary]);
+
+  // Bulk tag secondary categories
+  const handleBulkTagSecondary = async () => {
+    // Get IDs to tag - either selected or all visible that are missing secondary categories
+    const idsToTag = selectedIds.size > 0 
+      ? Array.from(selectedIds)
+      : filteredVocabulary
+          .filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0)
+          .slice(0, 100) // Max 100 at a time
+          .map(v => v.id);
+    
+    if (idsToTag.length === 0) {
+      toast.info("Nothing to tag", "All visible words already have secondary categories");
+      return;
+    }
+
+    // Open progress modal
+    setBulkTagWordIds(idsToTag);
+    setShowProgressModal(true);
+  };
+
+  // Tag a batch of words - called by progress modal
+  const tagBatch = async (ids: string[]) => {
+    const result = await api.post<{
+      results: { wordId: string; hanzi: string; secondaryCategories: string[] | null; success: boolean }[];
+      summary: { successful: number; failed: number };
+    }>('/v1/vocabulary/admin/bulk-tag-secondary-categories', { wordIds: ids });
+
+    return result.results.map(r => ({
+      wordId: r.wordId,
+      hanzi: r.hanzi,
+      categories: r.secondaryCategories,
+      success: r.success,
+    }));
+  };
+
+  // Called when progress modal completes
+  const handleBulkTagComplete = (results: { wordId: string; hanzi: string; categories: string[] | null; success: boolean }[]) => {
+    // Update local state
+    setVocabulary(prev => prev.map(v => {
+      const tagResult = results.find(r => r.wordId === v.id);
+      if (tagResult?.success && tagResult.categories) {
+        return { ...v, secondaryCategories: tagResult.categories };
+      }
+      return v;
+    }));
+
+    // Refresh lessons to update counts
+    loadLessons();
+    
+    setSelectedIds(new Set());
+    setShowProgressModal(false);
+    
+    const successCount = results.filter(r => r.success).length;
+    toast.success("Bulk tagging complete", `Tagged ${successCount} words with secondary categories`);
+  };
+
+  // Toggle selection
+  const toggleSelection = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  // Select all visible
+  const selectAllVisible = () => {
+    const allIds = new Set(filteredVocabulary.map(v => v.id));
+    setSelectedIds(allIds);
+  };
+
+  // Clear selection
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
 
   // Helper to check completeness
   const getCompletenessStatus = (entry: VocabularyEntry) => {
@@ -104,6 +238,7 @@ export function VocabularyList() {
         query: searchTerm || undefined,
         hsk_level: selectedHSK || undefined,
         category: selectedCategory || undefined,
+        lesson_id: selectedLesson || undefined,
         limit,
         offset: page * limit,
         sort: 'hanzi',
@@ -161,6 +296,22 @@ export function VocabularyList() {
   // Virtualized table columns definition
   const virtualizedColumns = useMemo<VirtualizedTableColumn<VocabularyEntry>[]>(() => [
     {
+      key: 'select',
+      header: '☑',
+      width: '40px',
+      render: (entry) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(entry.id)}
+          onChange={(e) => {
+            e.stopPropagation();
+            toggleSelection(entry.id);
+          }}
+          className="w-4 h-4 rounded border-gray-300 text-pink-600 focus:ring-pink-500 cursor-pointer"
+        />
+      ),
+    },
+    {
       key: 'rowNum',
       header: '#',
       width: '60px',
@@ -212,6 +363,44 @@ export function VocabularyList() {
           HSK {entry.hskLevel}
         </span>
       ),
+    },
+    {
+      key: 'secondaryCategories',
+      header: 'Tags',
+      width: '140px',
+      render: (entry) => {
+        const tags = entry.secondaryCategories || [];
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = (e.target as HTMLElement).getBoundingClientRect();
+              setInlineEditVocab({
+                id: entry.id,
+                hanzi: entry.hanzi,
+                tags: tags,
+                position: { top: rect.bottom + 4, left: Math.min(rect.left, window.innerWidth - 340) },
+              });
+            }}
+            className="text-left hover:bg-pink-50 rounded px-1 py-0.5 -mx-1 transition-colors cursor-pointer"
+          >
+            {tags.length === 0 ? (
+              <span className="text-gray-400 text-xs italic">+ Add tags</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {tags.slice(0, 2).map((tag, i) => (
+                  <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-pink-100 text-pink-700">
+                    {tag}
+                  </span>
+                ))}
+                {tags.length > 2 && (
+                  <span className="text-xs text-gray-500">+{tags.length - 2}</span>
+                )}
+              </div>
+            )}
+          </button>
+        );
+      },
     },
     {
       key: 'status',
@@ -271,7 +460,7 @@ export function VocabularyList() {
         </div>
       ),
     },
-  ], [getHSKColor, navigate, handleDelete]);
+  ], [getHSKColor, navigate, handleDelete, selectedIds, toggleSelection]);
 
   // Use virtualization for large datasets (100+ items)
   const useVirtualization = filteredVocabulary.length > 100;
@@ -392,6 +581,68 @@ export function VocabularyList() {
           </div>
         </div>
 
+        {/* Second row: Lesson filter */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 pt-3 border-t border-gray-100">
+          {/* Lesson Filter */}
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-gray-400" />
+              <select
+                value={selectedLesson}
+                onChange={(e) => {
+                  setSelectedLesson(e.target.value);
+                  setPage(0);
+                }}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+              >
+                <option value="">All Lessons</option>
+                {lessons.map((lesson) => (
+                  <option key={lesson.id} value={lesson.id}>
+                    HSK{lesson.hskLevel} L{lesson.lessonNumber}: {lesson.title}
+                    {lesson.vocabCount !== undefined && ` (${lesson.vocabCount} words)`}
+                    {lesson.untaggedCount && lesson.untaggedCount > 0 ? ` ⚠️ ${lesson.untaggedCount} untagged` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Bulk Actions */}
+          <div className="md:col-span-2 flex items-center gap-2 justify-end">
+            {selectedIds.size > 0 && (
+              <span className="text-sm text-gray-600">
+                {selectedIds.size} selected
+              </span>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={selectedIds.size > 0 ? clearSelection : selectAllVisible}
+              className="text-gray-600"
+            >
+              {selectedIds.size > 0 ? "Clear" : "Select All"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleBulkTagSecondary}
+              disabled={bulkTagging}
+              className="bg-pink-600 hover:bg-pink-700 text-white"
+            >
+              {bulkTagging ? (
+                <>
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  Tagging...
+                </>
+              ) : (
+                <>
+                  <Tag className="w-3 h-3 mr-1" />
+                  AI Tag Secondary ({selectedIds.size > 0 ? selectedIds.size : `up to 50`})
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
         {/* Completeness Filters */}
         <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-100">
           <button
@@ -427,16 +678,31 @@ export function VocabularyList() {
             <AlertTriangle className="w-3.5 h-3.5" />
             Incomplete Only
           </button>
+          <button
+            onClick={() => setFilterMissingSecondary(!filterMissingSecondary)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              filterMissingSecondary
+                ? 'bg-pink-100 text-pink-700 border-2 border-pink-400'
+                : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+            }`}
+          >
+            <Tag className="w-3.5 h-3.5" />
+            Missing Secondary
+          </button>
           
           {/* Stats */}
           <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
             <span className="flex items-center gap-1">
               <Volume2 className="w-3 h-3 text-emerald-500" />
-              {vocabulary.filter(v => v.wordAudioR2Key).length} with audio
+              {vocabulary.filter(v => v.wordAudioR2Key).length} audio
             </span>
             <span className="flex items-center gap-1">
               <MessageSquare className="w-3 h-3 text-blue-500" />
-              {vocabulary.filter(v => v.exampleChinese).length} with examples
+              {vocabulary.filter(v => v.exampleChinese).length} examples
+            </span>
+            <span className="flex items-center gap-1">
+              <Tag className="w-3 h-3 text-pink-500" />
+              {vocabulary.filter(v => v.secondaryCategories && v.secondaryCategories.length > 0).length} secondary
             </span>
             <span className="flex items-center gap-1">
               <AlertTriangle className="w-3 h-3 text-amber-500" />
@@ -445,6 +711,84 @@ export function VocabularyList() {
           </div>
         </div>
       </div>
+
+      {/* Quick Stats Bar - Shows when filtering by lesson */}
+      {selectedLesson && (() => {
+        const lesson = lessons.find(l => l.id === selectedLesson);
+        if (!lesson) return null;
+        
+        return (
+          <div className="mb-6 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <BookOpen className="w-5 h-5 text-indigo-600" />
+                  <h3 className="font-semibold text-indigo-900">
+                    HSK{lesson.hskLevel} L{lesson.lessonNumber}: {lesson.title}
+                  </h3>
+                  {lesson.contentStatus && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      lesson.contentStatus === 'live' ? 'bg-green-100 text-green-700' :
+                      lesson.contentStatus === 'staging' ? 'bg-blue-100 text-blue-700' :
+                      'bg-amber-100 text-amber-700'
+                    }`}>
+                      {lesson.contentStatus}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 text-sm text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <span className="font-medium text-indigo-700">{lesson.vocabCount || 0}</span> words
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Volume2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="font-medium">{lesson.withAudio || 0}</span> with audio
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5 text-pink-500" />
+                    <span className="font-medium">{lesson.withSecondary || 0}</span> with tags
+                  </span>
+                  {lesson.untaggedCount && lesson.untaggedCount > 0 && (
+                    <span className="flex items-center gap-1 text-amber-600">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span className="font-medium">{lesson.untaggedCount}</span> need tagging
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {lesson.untaggedCount && lesson.untaggedCount > 0 && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      // Select words missing secondary categories and trigger bulk tag
+                      const untaggedIds = filteredVocabulary
+                        .filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0)
+                        .map(v => v.id);
+                      setSelectedIds(new Set(untaggedIds));
+                      // Small delay then trigger bulk tag
+                      setTimeout(() => handleBulkTagSecondary(), 100);
+                    }}
+                    className="bg-pink-600 hover:bg-pink-700 text-white"
+                  >
+                    <Tag className="w-3 h-3 mr-1" />
+                    AI Tag Missing ({lesson.untaggedCount})
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/lessons/${lesson.id}/edit`)}
+                  className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                >
+                  <Edit className="w-3 h-3 mr-1" />
+                  Edit Lesson
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Error State */}
       {error && (
@@ -490,6 +834,14 @@ export function VocabularyList() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === filteredVocabulary.length && filteredVocabulary.length > 0}
+                      onChange={(e) => e.target.checked ? selectAllVisible() : clearSelection()}
+                      className="w-4 h-4 rounded border-gray-300 text-pink-600 focus:ring-pink-500"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
                     #
                   </th>
@@ -509,6 +861,9 @@ export function VocabularyList() {
                     HSK
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Tags
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -518,7 +873,15 @@ export function VocabularyList() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredVocabulary.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={entry.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(entry.id) ? 'bg-pink-50' : ''}`}>
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(entry.id)}
+                        onChange={() => toggleSelection(entry.id)}
+                        className="w-4 h-4 rounded border-gray-300 text-pink-600 focus:ring-pink-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <span className="text-sm font-mono text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
                         {entry.rowNum || '—'}
@@ -544,6 +907,41 @@ export function VocabularyList() {
                       <span className={`text-xs px-2 py-1 rounded font-medium ${getHSKColor(entry.hskLevel)}`}>
                         HSK {entry.hskLevel}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {(() => {
+                        const tags = entry.secondaryCategories || [];
+                        return (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const rect = (e.target as HTMLElement).getBoundingClientRect();
+                              setInlineEditVocab({
+                                id: entry.id,
+                                hanzi: entry.hanzi,
+                                tags: tags,
+                                position: { top: rect.bottom + 4, left: Math.min(rect.left, window.innerWidth - 340) },
+                              });
+                            }}
+                            className="text-left hover:bg-pink-50 rounded px-1 py-0.5 -mx-1 transition-colors cursor-pointer"
+                          >
+                            {tags.length === 0 ? (
+                              <span className="text-gray-400 text-xs italic">+ Add tags</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {tags.slice(0, 2).map((tag, i) => (
+                                  <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-pink-100 text-pink-700">
+                                    {tag}
+                                  </span>
+                                ))}
+                                {tags.length > 2 && (
+                                  <span className="text-xs text-gray-500">+{tags.length - 2}</span>
+                                )}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {(() => {
@@ -620,6 +1018,39 @@ export function VocabularyList() {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* Bulk Tag Progress Modal */}
+      <BulkTagProgressModal
+        isOpen={showProgressModal}
+        onClose={() => setShowProgressModal(false)}
+        wordIds={bulkTagWordIds}
+        onTagBatch={tagBatch}
+        onComplete={handleBulkTagComplete}
+        batchSize={5}
+      />
+
+      {/* Inline Tag Editor Popover */}
+      {inlineEditVocab && (
+        <InlineTagEditor
+          vocabId={inlineEditVocab.id}
+          hanzi={inlineEditVocab.hanzi}
+          currentTags={inlineEditVocab.tags}
+          position={inlineEditVocab.position}
+          onClose={() => setInlineEditVocab(null)}
+          onSave={(tags) => {
+            // Update local state
+            setVocabulary(prev => prev.map(v => 
+              v.id === inlineEditVocab.id 
+                ? { ...v, secondaryCategories: tags }
+                : v
+            ));
+            // Refresh lesson counts
+            loadLessons();
+            setInlineEditVocab(null);
+            toast.success("Tags saved", `Updated secondary categories for ${inlineEditVocab.hanzi}`);
+          }}
+        />
       )}
     </div>
   );

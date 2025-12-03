@@ -16,6 +16,7 @@ import { lessonAPI, type CreateLessonPayload } from "@/services/lessonAPI";
 import { useSaveShortcut, useEscapeKey } from "@/hooks/useKeyboardShortcuts";
 import { useAbortController } from "@/hooks/useAbortController";
 import { LessonImportModal } from "@/components/lesson-editor/LessonImportModal";
+import { LessonChecklist } from "@/components/lesson-editor/LessonChecklist";
 import { useAIAssistant } from "@/contexts/AIAssistantContext";
 
 // Default structure for a new lesson
@@ -495,6 +496,11 @@ export function LessonEditor() {
                 Close
               </Button>
             </div>
+
+            {/* Checklist - only show for saved lessons */}
+            {!isNewLesson && lesson.id && (
+              <LessonChecklist lessonId={lesson.id} />
+            )}
 
             <LessonMetadataEditor
               lesson={lesson}
