@@ -158,12 +158,12 @@ export function VocabularyEditor({
   }
 
   async function handleAiSuggestMetadata() {
-    if (isNew || !id) return toast.error("Save first", "Please save the entry before AI tagging");
     setAiTagging(true);
     try {
+      const wordId = await ensureSaved();
       const computedTone = extractTonePattern(entry.pinyin || "");
       setTonePattern(computedTone);
-      const posResult = await tagWord({ wordId: id, field: 'pos' });
+      const posResult = await tagWord({ wordId, field: 'pos' });
       if (posResult.success) setPos(posResult.value);
       setAiSuggestions({
         pos: posResult.success ? { value: posResult.value, suggested: true } : undefined,
@@ -185,7 +185,7 @@ export function VocabularyEditor({
   }
 
   async function handleAiSuggestSecondaryCategories(): Promise<string[]> {
-    if (!id) throw new Error("Save first");
+    const wordId = await ensureSaved();
     const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.studio.polymasterlabs.com';
     const response = await fetch(`${API_BASE_URL}/v1/vocabulary/admin/bulk-tag-secondary-categories`, {
       method: 'POST',
@@ -193,7 +193,7 @@ export function VocabularyEditor({
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('hm_access_token')}`,
       },
-      body: JSON.stringify({ wordIds: [id] }),
+      body: JSON.stringify({ wordIds: [wordId] }),
     });
     const result = await response.json();
     if (result.results?.[0]?.success) return result.results[0].secondaryCategories || [];
@@ -201,10 +201,10 @@ export function VocabularyEditor({
   }
 
   async function handleGenerateExample() {
-    if (isNew || !id) return toast.error("Save first", "Please save the entry before generating examples");
     try {
       setGeneratingExample(true);
-      const result = await generateExampleSentence(id, true);
+      const wordId = await ensureSaved();
+      const result = await generateExampleSentence(wordId, true);
       setEntry(prev => ({
         ...prev,
         exampleChinese: result.sentence.chinese,
@@ -219,28 +219,60 @@ export function VocabularyEditor({
     }
   }
 
-  // Audio handlers
+  // Quick save for new entries (used before audio generation)
+  const [quickSavedId, setQuickSavedId] = useState<string | null>(null);
+  const effectiveId = quickSavedId || id;
+  const effectiveIsNew = isNew && !quickSavedId;
+
+  const ensureSaved = async (): Promise<string> => {
+    // If already saved, return the ID
+    if (effectiveId) return effectiveId;
+    
+    // Validate minimum required fields
+    if (!entry.hanzi?.trim()) throw new Error("Hanzi is required");
+    if (!entry.pinyin?.trim()) throw new Error("Pinyin is required");
+    if (!entry.english?.trim()) throw new Error("English is required");
+    if (!entry.category?.trim()) throw new Error("Category is required");
+    
+    // Quick save with minimal data
+    const tags = tagsInput.split(",").map(t => t.trim()).filter(Boolean);
+    const data = {
+      hanzi: entry.hanzi!,
+      pinyin: entry.pinyin!,
+      english: entry.english!,
+      category: entry.category!,
+      hskLevel: entry.hskLevel!,
+      tags: tags.length > 0 ? tags : undefined,
+    };
+    
+    const created = await createVocabulary(data);
+    setQuickSavedId(created.id);
+    toast.success("Entry saved!", "Now generating audio...");
+    return created.id;
+  };
+
+  // Audio handlers (now auto-save if needed)
   const handleGenerateWordAudio = async (): Promise<string> => {
-    if (!id) throw new Error("Save first");
-    const result = await previewWordAudio(id, selectedVoice, 1.0);
+    const wordId = await ensureSaved();
+    const result = await previewWordAudio(wordId, selectedVoice, 1.0);
     return result.audioBase64;
   };
   
   const handleSaveWordAudio = async (base64: string): Promise<void> => {
-    if (!id) throw new Error("Save first");
-    const result = await saveWordAudio(id, base64);
+    const wordId = await ensureSaved();
+    const result = await saveWordAudio(wordId, base64);
     setEntry(prev => ({ ...prev, wordAudioR2Key: result.r2Key }));
   };
   
   const handleGenerateExampleAudio = async (): Promise<string> => {
-    if (!id) throw new Error("Save first");
-    const result = await previewExampleAudio(id, selectedVoice, 1.0);
+    const wordId = await ensureSaved();
+    const result = await previewExampleAudio(wordId, selectedVoice, 1.0);
     return result.audioBase64;
   };
   
   const handleSaveExampleAudio = async (base64: string): Promise<void> => {
-    if (!id) throw new Error("Save first");
-    const result = await saveExampleAudio(id, base64);
+    const wordId = await ensureSaved();
+    const result = await saveExampleAudio(wordId, base64);
     setEntry(prev => ({ ...prev, exampleAudioR2Key: result.r2Key }));
   };
 
@@ -378,8 +410,8 @@ export function VocabularyEditor({
                 icon={<Volume2 className="w-4 h-4" />}
                 colorTheme="purple"
                 savedAudioKey={entry.wordAudioR2Key}
-                canGenerate={!isNew}
-                disabledHint="💡 Save the entry first to generate audio"
+                canGenerate={!!(entry.hanzi && entry.pinyin && entry.english && entry.category)}
+                disabledHint="💡 Fill in Hanzi, Pinyin, English, and Category first"
                 onGenerate={handleGenerateWordAudio}
                 onSave={handleSaveWordAudio}
               />
@@ -395,7 +427,7 @@ export function VocabularyEditor({
             <VocabExampleSection
               entry={entry}
               onChange={(updates) => setEntry(prev => ({ ...prev, ...updates }))}
-              isNew={isNew}
+              isNew={effectiveIsNew}
               generatingExample={generatingExample}
               onGenerateExample={handleGenerateExample}
               onGenerateAudio={handleGenerateExampleAudio}
@@ -416,7 +448,7 @@ export function VocabularyEditor({
               onTonePatternChange={setTonePattern}
               secondaryCategories={secondaryCategories}
               onSecondaryCategoriesChange={setSecondaryCategories}
-              isNew={isNew}
+              isNew={effectiveIsNew}
               aiTagging={aiTagging}
               aiSuggestions={aiSuggestions}
               onAiSuggestMetadata={handleAiSuggestMetadata}

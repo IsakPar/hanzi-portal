@@ -15,6 +15,7 @@ import { useGlobalConfirm } from "@/hooks/useConfirm";
 import { lessonAPI, type CreateLessonPayload } from "@/services/lessonAPI";
 import { useSaveShortcut, useEscapeKey } from "@/hooks/useKeyboardShortcuts";
 import { useAbortController } from "@/hooks/useAbortController";
+import { useAutoSave } from "@/hooks/useAutoSave";
 import { LessonImportModal } from "@/components/lesson-editor/LessonImportModal";
 import { LessonChecklist } from "@/components/lesson-editor/LessonChecklist";
 import { LessonVocabHealthModal } from "@/components/lesson-editor/LessonVocabHealthModal";
@@ -63,6 +64,30 @@ export function LessonEditor() {
   
   // Ref for save handler (needed for keyboard shortcut)
   const saveHandlerRef = useRef<() => void>(() => {});
+
+  // Generate storage key based on lesson ID
+  const autoSaveKey = `lesson-draft-${lessonId || 'new'}`;
+
+  // Auto-save hook for draft persistence
+  const { 
+    lastLocalSave, 
+    hasRecoveredData,
+    clearStorage: clearAutoSave,
+    recoverData,
+    dismissRecovery,
+  } = useAutoSave({
+    storageKey: autoSaveKey,
+    data: lesson,
+    isDirty,
+    isNew: isNewLesson,
+    localDebounceMs: 2000, // Save to localStorage after 2 seconds of inactivity
+    onRecover: (recoveredLesson) => {
+      setLesson(recoveredLesson);
+      setIsDirty(true);
+      logger.log("Recovered lesson from auto-save");
+      toast.success("Restored!", "Your unsaved changes have been restored.");
+    },
+  });
 
   // Load lesson data (or import from JSON)
   const loadLesson = useCallback(async () => {
@@ -303,6 +328,7 @@ export function LessonEditor() {
       }
 
       setIsDirty(false);
+      clearAutoSave(); // Clear auto-save storage after successful save
     } catch (err: any) {
       logger.error("Failed to save lesson:", err);
       toast.error("Failed to save", err.message || "Please try again");
@@ -349,6 +375,35 @@ export function LessonEditor() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
+      {/* Recovery Banner */}
+      {hasRecoveredData && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+            <span className="text-sm text-amber-800">
+              <strong>Unsaved changes found!</strong> Would you like to restore your previous work?
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={dismissRecovery}
+              className="text-amber-700 border-amber-300 hover:bg-amber-100"
+            >
+              Discard
+            </Button>
+            <Button
+              size="sm"
+              onClick={recoverData}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              Restore Changes
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="h-14 border-b flex items-center justify-between px-4 bg-card shrink-0 z-10">
         <div className="flex items-center gap-4">
@@ -368,6 +423,11 @@ export function LessonEditor() {
             <p className="text-xs text-muted-foreground">
               HSK {lesson.hskLevel} • {lesson.blocks?.length || 0} Blocks
               {isNewLesson && " • Draft"}
+              {isDirty && lastLocalSave && (
+                <span className="ml-2 text-green-600">
+                  • Auto-saved {lastLocalSave.toLocaleTimeString()}
+                </span>
+              )}
             </p>
           </div>
         </div>
