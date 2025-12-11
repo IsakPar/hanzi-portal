@@ -269,15 +269,27 @@ export function VocabularyList() {
       if (selectedCategory) params.category = selectedCategory;
       if (selectedLesson) params.lessonId = selectedLesson;
       
-      // Apply the same filter logic as the page
+      // Apply current toggle filters (so user can filter first, then bulk)
+      if (filterHasAudio) params.has_audio = 'true';
+      if (filterHasExample) params.has_example = 'true';
+      if (filterIncomplete) params.incomplete = 'true';
+      if (filterMissingSecondary) params.missing_secondary = 'true';
+      if (filterInLesson) params.in_lesson = 'true';
+      
+      // For specific operations, override to target items that need work
       if (type === 'audio') {
-        params.has_audio = 'false'; // Only items WITHOUT audio
+        // Get items WITHOUT audio (override has_audio filter)
+        delete params.has_audio;
+        params.has_audio = 'false';
       } else if (type === 'example') {
-        params.has_example = 'false'; // Only items WITHOUT example
+        // Get items WITHOUT example
+        delete params.has_example;
+        params.has_example = 'false';
       } else if (type === 'tags') {
-        params.missing_secondary = 'true'; // Only items missing tags
+        // Get items missing secondary categories
+        params.missing_secondary = 'true';
       }
-      // For 'complete', fetch all and let staged processing handle it
+      // For 'complete', use the filters as-is and let staged processing handle it
       
       const response = await searchVocabulary(params);
       let itemsToProcess = response.results;
@@ -310,7 +322,7 @@ export function VocabularyList() {
     } catch (err) {
       toast.error('Failed to load items', (err as Error).message);
     }
-  }, [selection, searchTerm, selectedHSK, selectedCategory, selectedLesson, bulkOps]);
+  }, [selection, searchTerm, selectedHSK, selectedCategory, selectedLesson, filterHasAudio, filterHasExample, filterIncomplete, filterMissingSecondary, filterInLesson, bulkOps]);
 
   const handleTagMissing = useCallback(() => {
     const untaggedIds = filteredVocabulary
