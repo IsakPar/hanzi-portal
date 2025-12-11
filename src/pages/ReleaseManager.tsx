@@ -541,33 +541,63 @@ export function ReleaseManager() {
                     </Button>
                   </div>
                   
-                  {/* Stats Row */}
-                  <div className="grid grid-cols-5 gap-3 mb-4">
-                    <div className="bg-slate-700/30 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-white">{preview.vocabulary.total}</div>
-                      <div className="text-xs text-slate-500">Total</div>
+                  {/* Quality Gate Explanation */}
+                  <div className="bg-slate-700/20 rounded-lg p-3 mb-4 border border-slate-600/50">
+                    <div className="flex items-center gap-2 text-sm text-slate-300 mb-2">
+                      <span className="text-lg">🛡️</span>
+                      <span className="font-medium">Quality Gate Active</span>
                     </div>
-                    <div className="bg-slate-700/30 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-blue-400">{preview.vocabulary.inLessons}</div>
-                      <div className="text-xs text-slate-500">In Lessons</div>
-                    </div>
-                    <div className="bg-slate-700/30 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-emerald-400">{preview.vocabulary.complete ?? preview.vocabulary.withAudio}</div>
-                      <div className="text-xs text-slate-500">✓ Complete</div>
-                    </div>
-                    <div className="bg-slate-700/30 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-amber-400">{preview.vocabulary.incomplete ?? preview.vocabulary.missingAudio}</div>
-                      <div className="text-xs text-slate-500">⚠ Incomplete</div>
-                    </div>
-                    <div className="bg-slate-700/30 rounded-lg p-3 text-center">
-                      <div className={cn(
-                        "text-xl font-bold",
-                        preview.vocabulary.missingAudio > 0 ? "text-amber-400" : "text-slate-500"
-                      )}>
-                        {preview.vocabulary.missingAudio}
+                    <p className="text-xs text-slate-400">
+                      Only vocab with <span className="text-emerald-400">audio</span> + <span className="text-emerald-400">example sentence</span> + <span className="text-emerald-400">category</span> will ship to the app.
+                    </p>
+                  </div>
+
+                  {/* Stats Row - Clearer breakdown */}
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    {/* Left: In Lessons breakdown */}
+                    <div className="bg-slate-700/30 rounded-xl p-4">
+                      <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">Found in Lessons</div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-blue-400">{preview.vocabulary.inLessons}</span>
+                        <span className="text-sm text-slate-500">vocab items</span>
                       </div>
-                      <div className="text-xs text-slate-500">No Audio</div>
+                      <div className="mt-3 pt-3 border-t border-slate-600/50 space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-emerald-400">✓ Ready to ship</span>
+                          <span className="font-medium text-emerald-400">
+                            {Math.min(preview.vocabulary.complete ?? preview.vocabulary.withAudio, preview.vocabulary.inLessons)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-red-400">✗ Blocked (incomplete)</span>
+                          <span className="font-medium text-red-400">
+                            {Math.max(0, preview.vocabulary.inLessons - (preview.vocabulary.complete ?? preview.vocabulary.withAudio))}
+                          </span>
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Right: Will Ship */}
+                    <div className="bg-emerald-500/10 rounded-xl p-4 border border-emerald-500/30">
+                      <div className="text-xs text-emerald-400 uppercase tracking-wide mb-2">Will Ship to App</div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-emerald-400">
+                          {Math.min(preview.vocabulary.complete ?? preview.vocabulary.withAudio, preview.vocabulary.inLessons)}
+                        </span>
+                        <span className="text-sm text-emerald-300/70">vocab items</span>
+                      </div>
+                      <div className="mt-3 text-xs text-emerald-300/70">
+                        ✓ Has audio<br/>
+                        ✓ Has example sentence<br/>
+                        ✓ Has category
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* HSK Total (less prominent) */}
+                  <div className="flex justify-between text-xs text-slate-500 mb-4 px-1">
+                    <span>Total HSK {selectedHsk} vocab in database: {preview.vocabulary.total}</span>
+                    <span>Missing audio: {preview.vocabulary.missingAudio}</span>
                   </div>
                   
                   {/* Mode Selector */}

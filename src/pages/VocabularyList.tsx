@@ -13,9 +13,11 @@ import { useGlobalConfirm } from "@/hooks/useConfirm";
 import { toast } from "@/hooks/useToast";
 import { useSelection } from "@/hooks/useSelection";
 import { useBulkTagging } from "@/hooks/useBulkTagging";
+import { useBulkOperations, type BulkOperationType } from "@/hooks/useBulkOperations";
 import { SkeletonVocabularyTable } from "@/components/ui/skeleton";
 import { EmptyVocabulary, EmptySearchResults } from "@/components/ui/empty-state";
 import { BulkTagProgressModal } from "@/components/ui/BulkTagProgressModal";
+import { BulkOperationsModal } from "@/components/ui/BulkOperationsModal";
 import { InlineTagEditor } from "@/components/ui/InlineTagEditor";
 import {
   VocabListHeader,
@@ -86,6 +88,17 @@ export function VocabularyList() {
       
       // Refresh lessons to update counts
       loadLessons();
+      selection.clear();
+    },
+  });
+
+  // Bulk operations hook (audio, examples, tags, complete)
+  const bulkOps = useBulkOperations({
+    batchSize: 5, // Process 5 at a time
+    voice: 'xiaoxiao',
+    onComplete: () => {
+      // Refresh vocabulary to show updated data
+      loadVocabulary();
       selection.clear();
     },
   });
@@ -242,6 +255,47 @@ export function VocabularyList() {
     bulkTagging.startBulkTag(idsToTag);
   }, [selection, filteredVocabulary, bulkTagging]);
 
+  // Handle bulk operations (audio, example, tags, complete)
+  const handleBulkOperation = useCallback((type: BulkOperationType) => {
+    // Get items to process
+    let itemsToProcess = selection.selectedCount > 0
+      ? filteredVocabulary.filter(v => selection.selectedIds.has(v.id))
+      : filteredVocabulary;
+    
+    // Filter based on operation type - only process items that need it
+    if (type === 'audio') {
+      itemsToProcess = itemsToProcess.filter(v => !v.wordAudioR2Key);
+    } else if (type === 'example') {
+      itemsToProcess = itemsToProcess.filter(v => !v.exampleChinese);
+    } else if (type === 'tags') {
+      itemsToProcess = itemsToProcess.filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0);
+    }
+    // 'complete' processes all selected items
+    
+    // Limit to 50 for safety
+    const limitedItems = itemsToProcess.slice(0, 50);
+    
+    if (limitedItems.length === 0) {
+      toast.info('Nothing to process', `All items already have ${type === 'audio' ? 'audio' : type === 'example' ? 'examples' : 'tags'}`);
+      return;
+    }
+    
+    // Convert to the format expected by bulkOps
+    const vocabItems = limitedItems.map(v => ({
+      id: v.id,
+      hanzi: v.hanzi,
+      pinyin: v.pinyin,
+      english: v.english,
+      category: v.category,
+      wordAudioR2Key: v.wordAudioR2Key,
+      exampleChinese: v.exampleChinese,
+      exampleAudioR2Key: v.exampleAudioR2Key,
+      secondaryCategories: v.secondaryCategories,
+    }));
+    
+    bulkOps.startBulkOperation(vocabItems, type);
+  }, [selection, filteredVocabulary, bulkOps]);
+
   const handleTagMissing = useCallback(() => {
     const untaggedIds = filteredVocabulary
       .filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0)
@@ -329,6 +383,8 @@ export function VocabularyList() {
         onClearSelection={selection.clear}
         bulkTagging={bulkTagging.isTagging}
         onBulkTagSecondary={handleBulkTagSecondary}
+        bulkOperationRunning={bulkOps.isRunning}
+        onBulkOperation={handleBulkOperation}
         stats={stats}
       />
 
@@ -392,6 +448,16 @@ export function VocabularyList() {
         onTagBatch={bulkTagging.tagBatch}
         onComplete={bulkTagging.handleComplete}
         batchSize={5}
+      />
+
+      {/* Bulk Operations Modal (Audio, Examples, Tags, Complete) */}
+      <BulkOperationsModal
+        isOpen={bulkOps.showModal}
+        isRunning={bulkOps.isRunning}
+        operationType={bulkOps.operationType}
+        progress={bulkOps.progress}
+        onAbort={bulkOps.abort}
+        onClose={bulkOps.closeModal}
       />
 
       {/* Inline Tag Editor Popover */}

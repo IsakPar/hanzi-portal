@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,8 +9,11 @@ import {
   Tag,
   Loader2,
   BookOpen,
+  Zap,
+  ChevronDown,
 } from "lucide-react";
 import { HSK_LEVELS } from "@/services/vocabularyAPI";
+import type { BulkOperationType } from "@/hooks/useBulkOperations";
 
 export interface LessonOption {
   id: string;
@@ -60,8 +64,10 @@ interface VocabFiltersProps {
   onClearSelection: () => void;
   
   // Bulk operations
-  bulkTagging: boolean;
-  onBulkTagSecondary: () => void;
+  bulkTagging?: boolean; // Legacy, kept for compatibility
+  onBulkTagSecondary?: () => void; // Legacy, kept for compatibility
+  bulkOperationRunning?: boolean;
+  onBulkOperation?: (type: BulkOperationType) => void;
   
   // Stats
   stats: {
@@ -97,9 +103,20 @@ export function VocabFilters({
   onSelectAll,
   onClearSelection,
   bulkTagging,
-  onBulkTagSecondary,
+  onBulkTagSecondary: _onBulkTagSecondary, // Legacy prop, now using bulk operations
+  bulkOperationRunning = false,
+  onBulkOperation,
   stats,
 }: VocabFiltersProps) {
+  // Suppress unused variable warning
+  void _onBulkTagSecondary;
+  const [showBulkMenu, setShowBulkMenu] = useState(false);
+  
+  const handleBulkAction = (type: BulkOperationType) => {
+    setShowBulkMenu(false);
+    onBulkOperation?.(type);
+  };
+  
   return (
     <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
       {/* First row: Search, HSK, Category */}
@@ -184,24 +201,98 @@ export function VocabFilters({
           >
             {selectedCount > 0 ? "Clear" : "Select All"}
           </Button>
-          <Button
-            size="sm"
-            onClick={onBulkTagSecondary}
-            disabled={bulkTagging}
-            className="bg-pink-600 hover:bg-pink-700 text-white"
-          >
-            {bulkTagging ? (
+          
+          {/* Bulk Operations Dropdown */}
+          <div className="relative">
+            <Button
+              size="sm"
+              onClick={() => setShowBulkMenu(!showBulkMenu)}
+              disabled={bulkOperationRunning || bulkTagging}
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              {bulkOperationRunning ? (
+                <>
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3 h-3 mr-1" />
+                  Bulk Actions ({selectedCount > 0 ? selectedCount : 'all'})
+                  <ChevronDown className="w-3 h-3 ml-1" />
+                </>
+              )}
+            </Button>
+            
+            {showBulkMenu && !bulkOperationRunning && (
               <>
-                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                Tagging...
-              </>
-            ) : (
-              <>
-                <Tag className="w-3 h-3 mr-1" />
-                AI Tag Secondary ({selectedCount > 0 ? selectedCount : `up to 50`})
+                {/* Backdrop */}
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setShowBulkMenu(false)} 
+                />
+                
+                {/* Dropdown Menu */}
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-20 overflow-hidden">
+                  <div className="py-2">
+                    <button
+                      onClick={() => handleBulkAction('audio')}
+                      className="w-full px-4 py-3 text-left hover:bg-purple-50 flex items-center gap-3 transition-colors"
+                    >
+                      <div className="p-2 bg-purple-100 rounded-lg">
+                        <Volume2 className="w-4 h-4 text-purple-600" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">Generate Audio</div>
+                        <div className="text-xs text-gray-500">Azure TTS at 1.0x speed</div>
+                      </div>
+                    </button>
+                    
+                    <button
+                      onClick={() => handleBulkAction('example')}
+                      className="w-full px-4 py-3 text-left hover:bg-blue-50 flex items-center gap-3 transition-colors"
+                    >
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <MessageSquare className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">Generate Examples</div>
+                        <div className="text-xs text-gray-500">AI example sentences + audio</div>
+                      </div>
+                    </button>
+                    
+                    <button
+                      onClick={() => handleBulkAction('tags')}
+                      className="w-full px-4 py-3 text-left hover:bg-pink-50 flex items-center gap-3 transition-colors"
+                    >
+                      <div className="p-2 bg-pink-100 rounded-lg">
+                        <Tag className="w-4 h-4 text-pink-600" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">Auto-Tag</div>
+                        <div className="text-xs text-gray-500">POS, tone patterns, etc.</div>
+                      </div>
+                    </button>
+                    
+                    <div className="border-t border-gray-100 my-2" />
+                    
+                    <button
+                      onClick={() => handleBulkAction('complete')}
+                      className="w-full px-4 py-3 text-left hover:bg-emerald-50 flex items-center gap-3 transition-colors"
+                    >
+                      <div className="p-2 bg-emerald-100 rounded-lg">
+                        <Zap className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">Complete All</div>
+                        <div className="text-xs text-gray-500">Audio + example + tags</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
               </>
             )}
-          </Button>
+          </div>
         </div>
       </div>
 
