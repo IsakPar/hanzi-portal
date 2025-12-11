@@ -62,6 +62,37 @@ interface UseBulkOperationsOptions {
   onComplete?: (results: BulkOperationResult[]) => void;
 }
 
+// Retry with exponential backoff for rate limiting
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 2000
+): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err as Error;
+      const isRateLimit = lastError.message.toLowerCase().includes('rate') ||
+                          lastError.message.includes('429') ||
+                          lastError.message.toLowerCase().includes('too many');
+      
+      if (isRateLimit && attempt < maxRetries - 1) {
+        const delay = baseDelay * Math.pow(2, attempt); // 2s, 4s, 8s
+        console.log(`Rate limited, waiting ${delay}ms before retry ${attempt + 1}/${maxRetries}`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        throw lastError;
+      }
+    }
+  }
+  throw lastError;
+}
+
+// Delay helper
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 // Cost estimation helpers
 export function estimateCost(items: VocabItem[], type: BulkOperationType): CostEstimate {
   const needsAudio = items.filter(v => !v.wordAudioR2Key);
@@ -123,11 +154,15 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
   
   const abortRef = useRef(false);
 
-  // Generate audio for a single word
+  // Generate audio for a single word (with retry for rate limiting)
   const generateAudioForWord = async (vocab: VocabItem): Promise<BulkOperationResult> => {
     try {
-      // Generate audio using Azure TTS
-      const result = await synthesize(vocab.hanzi, voice, vocab.pinyin);
+      // Generate audio using Azure TTS with retry
+      const result = await withRetry(
+        () => synthesize(vocab.hanzi, voice, vocab.pinyin),
+        3,
+        2000
+      );
       
       // Save to R2
       await saveWordAudio(vocab.id, result.audioBase64);
@@ -155,10 +190,14 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
       // Generate example using AI
       const result = await generateExampleSentence(vocab.id);
       
-      // Also generate audio for the example if we got one
+      // Also generate audio for the example if we got one (with retry)
       if (result.success && result.sentence?.chinese) {
         try {
-          const audioResult = await synthesize(result.sentence.chinese, voice);
+          const audioResult = await withRetry(
+            () => synthesize(result.sentence!.chinese, voice),
+            3,
+            2000
+          );
           await saveExampleAudio(vocab.id, audioResult.audioBase64);
         } catch (audioErr) {
           console.warn('Failed to generate example audio:', audioErr);
@@ -275,8 +314,8 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
         results: [...prev.results, result],
       }));
       
-      // Small delay to prevent overwhelming the API
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // 500ms delay to prevent rate limiting
+      await delay(500);
     }
     
     return results;
@@ -352,7 +391,7 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
                 allResults.push({ wordId: item.id, hanzi: item.hanzi, success: false, error: (err as Error).message, operation: 'complete', stage: 'example' });
                 setProgress(prev => ({ ...prev, completed: prev.completed + 1, failed: prev.failed + 1 }));
               }
-              await new Promise(r => setTimeout(r, 100));
+              await delay(500); // 500ms between requests to avoid rate limiting
             }
           }
         }
@@ -375,7 +414,7 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
                 successful: prev.successful + (result.success ? 1 : 0),
                 failed: prev.failed + (result.success ? 0 : 1),
               }));
-              await new Promise(r => setTimeout(r, 100));
+              await delay(500); // 500ms between requests to avoid rate limiting
             }
           }
         }
@@ -394,7 +433,11 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
                 // Fetch the updated vocab to get the example sentence
                 const updated = await api.get<{ exampleChinese?: string }>(`/v1/vocabulary/${item.id}`);
                 if (updated.exampleChinese) {
-                  const audioResult = await synthesize(updated.exampleChinese, voice);
+                  const audioResult = await withRetry(
+                    () => synthesize(updated.exampleChinese!, voice),
+                    3,
+                    2000
+                  );
                   await saveExampleAudio(item.id, audioResult.audioBase64);
                   allResults.push({ wordId: item.id, hanzi: item.hanzi, success: true, operation: 'complete', stage: 'example_audio' });
                   setProgress(prev => ({ ...prev, completed: prev.completed + 1, successful: prev.successful + 1 }));
@@ -403,7 +446,7 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
                 allResults.push({ wordId: item.id, hanzi: item.hanzi, success: false, error: (err as Error).message, operation: 'complete', stage: 'example_audio' });
                 setProgress(prev => ({ ...prev, completed: prev.completed + 1, failed: prev.failed + 1 }));
               }
-              await new Promise(r => setTimeout(r, 100));
+              await delay(500); // 500ms between requests to avoid rate limiting
             }
           }
         }
@@ -426,7 +469,7 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
                 successful: prev.successful + (result.success ? 1 : 0),
                 failed: prev.failed + (result.success ? 0 : 1),
               }));
-              await new Promise(r => setTimeout(r, 100));
+              await delay(500); // 500ms between requests to avoid rate limiting
             }
           }
         }
