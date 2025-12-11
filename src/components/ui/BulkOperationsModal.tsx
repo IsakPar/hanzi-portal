@@ -58,6 +58,13 @@ export function BulkOperationsModal({
 
         {/* Progress */}
         <div className="px-6 py-6 space-y-4">
+          {/* Stage indicator (for complete operation) */}
+          {progress.stage && (
+            <div className="bg-indigo-50 text-indigo-700 px-3 py-2 rounded-lg text-sm font-medium">
+              {progress.stage}
+            </div>
+          )}
+
           {/* Progress bar */}
           <div>
             <div className="flex justify-between text-sm mb-2">

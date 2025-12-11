@@ -18,6 +18,7 @@ import { SkeletonVocabularyTable } from "@/components/ui/skeleton";
 import { EmptyVocabulary, EmptySearchResults } from "@/components/ui/empty-state";
 import { BulkTagProgressModal } from "@/components/ui/BulkTagProgressModal";
 import { BulkOperationsModal } from "@/components/ui/BulkOperationsModal";
+import { BulkOperationConfirmation } from "@/components/ui/BulkOperationConfirmation";
 import { InlineTagEditor } from "@/components/ui/InlineTagEditor";
 import {
   VocabListHeader,
@@ -257,7 +258,7 @@ export function VocabularyList() {
 
   // Handle bulk operations (audio, example, tags, complete)
   const handleBulkOperation = useCallback((type: BulkOperationType) => {
-    // Get items to process
+    // Get items to process - NO LIMIT, process all
     let itemsToProcess = selection.selectedCount > 0
       ? filteredVocabulary.filter(v => selection.selectedIds.has(v.id))
       : filteredVocabulary;
@@ -270,18 +271,15 @@ export function VocabularyList() {
     } else if (type === 'tags') {
       itemsToProcess = itemsToProcess.filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0);
     }
-    // 'complete' processes all selected items
+    // 'complete' processes all items but stages internally filter by what's needed
     
-    // Limit to 50 for safety
-    const limitedItems = itemsToProcess.slice(0, 50);
-    
-    if (limitedItems.length === 0) {
+    if (itemsToProcess.length === 0) {
       toast.info('Nothing to process', `All items already have ${type === 'audio' ? 'audio' : type === 'example' ? 'examples' : 'tags'}`);
       return;
     }
     
     // Convert to the format expected by bulkOps
-    const vocabItems = limitedItems.map(v => ({
+    const vocabItems = itemsToProcess.map(v => ({
       id: v.id,
       hanzi: v.hanzi,
       pinyin: v.pinyin,
@@ -293,6 +291,7 @@ export function VocabularyList() {
       secondaryCategories: v.secondaryCategories,
     }));
     
+    // This now shows confirmation first with cost estimate
     bulkOps.startBulkOperation(vocabItems, type);
   }, [selection, filteredVocabulary, bulkOps]);
 
@@ -450,7 +449,17 @@ export function VocabularyList() {
         batchSize={5}
       />
 
-      {/* Bulk Operations Modal (Audio, Examples, Tags, Complete) */}
+      {/* Bulk Operation Confirmation (shows cost estimate) */}
+      <BulkOperationConfirmation
+        isOpen={bulkOps.showConfirmation}
+        operationType={bulkOps.operationType}
+        items={bulkOps.itemsToProcess}
+        costEstimate={bulkOps.costEstimate}
+        onConfirm={bulkOps.confirmAndRun}
+        onCancel={bulkOps.cancelConfirmation}
+      />
+
+      {/* Bulk Operations Progress Modal */}
       <BulkOperationsModal
         isOpen={bulkOps.showModal}
         isRunning={bulkOps.isRunning}

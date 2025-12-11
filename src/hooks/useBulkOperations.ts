@@ -5,7 +5,7 @@
  * - Generate audio (Azure TTS)
  * - Generate example sentences (AI)
  * - Auto-tag (POS, tone pattern)
- * - Complete all (audio + example + tags)
+ * - Complete all (staged: examples → audio → tags)
  */
 
 import { useState, useCallback, useRef } from 'react';
@@ -22,6 +22,7 @@ export interface BulkOperationResult {
   success: boolean;
   error?: string;
   operation: BulkOperationType;
+  stage?: string;
 }
 
 export interface BulkOperationProgress {
@@ -30,10 +31,20 @@ export interface BulkOperationProgress {
   successful: number;
   failed: number;
   current?: string;
+  stage?: string; // Current stage for 'complete' operation
   results: BulkOperationResult[];
 }
 
-interface VocabItem {
+export interface CostEstimate {
+  audioCount: number;
+  exampleCount: number;
+  tagCount: number;
+  estimatedAudioCost: number; // Azure TTS: ~$16 per 1M chars
+  estimatedAiCost: number; // OpenAI for examples
+  totalEstimatedCost: number;
+}
+
+export interface VocabItem {
   id: string;
   hanzi: string;
   pinyin: string;
@@ -51,12 +62,57 @@ interface UseBulkOperationsOptions {
   onComplete?: (results: BulkOperationResult[]) => void;
 }
 
+// Cost estimation helpers
+export function estimateCost(items: VocabItem[], type: BulkOperationType): CostEstimate {
+  const needsAudio = items.filter(v => !v.wordAudioR2Key);
+  const needsExample = items.filter(v => !v.exampleChinese);
+  const needsTags = items.filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0);
+  
+  let audioCount = 0;
+  let exampleCount = 0;
+  let tagCount = 0;
+  
+  if (type === 'audio') {
+    audioCount = needsAudio.length;
+  } else if (type === 'example') {
+    exampleCount = needsExample.length;
+    audioCount = needsExample.length; // Example audio too
+  } else if (type === 'tags') {
+    tagCount = needsTags.length;
+  } else if (type === 'complete') {
+    audioCount = needsAudio.length + needsExample.length; // Word audio + example audio
+    exampleCount = needsExample.length;
+    tagCount = needsTags.length;
+  }
+  
+  // Azure TTS: ~$16 per 1M characters, avg 3 chars per word + 15 chars per example
+  const avgCharsPerWord = 3;
+  const avgCharsPerExample = 15;
+  const totalChars = (audioCount * avgCharsPerWord) + (exampleCount * avgCharsPerExample);
+  const estimatedAudioCost = (totalChars / 1_000_000) * 16;
+  
+  // OpenAI: ~$0.002 per 1K tokens, ~200 tokens per example generation
+  const estimatedAiCost = (exampleCount * 200 / 1000) * 0.002;
+  
+  return {
+    audioCount,
+    exampleCount,
+    tagCount,
+    estimatedAudioCost,
+    estimatedAiCost,
+    totalEstimatedCost: estimatedAudioCost + estimatedAiCost,
+  };
+}
+
 export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
   const { batchSize = 5, voice = 'xiaoxiao', onComplete } = options;
   
   const [isRunning, setIsRunning] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const [operationType, setOperationType] = useState<BulkOperationType>('audio');
+  const [itemsToProcess, setItemsToProcess] = useState<VocabItem[]>([]);
+  const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
   const [progress, setProgress] = useState<BulkOperationProgress>({
     total: 0,
     completed: 0,
@@ -226,8 +282,8 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
     return results;
   };
 
-  // Start bulk operation
-  const startBulkOperation = useCallback((
+  // Request bulk operation - shows confirmation first
+  const requestBulkOperation = useCallback((
     items: VocabItem[],
     type: BulkOperationType
   ) => {
@@ -236,10 +292,34 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
       return;
     }
     
-    abortRef.current = false;
+    // Calculate cost estimate
+    const estimate = estimateCost(items, type);
+    setCostEstimate(estimate);
+    setItemsToProcess(items);
     setOperationType(type);
+    setShowConfirmation(true);
+  }, []);
+
+  // Actually run the operation after confirmation
+  const confirmAndRun = useCallback(() => {
+    const items = itemsToProcess;
+    const type = operationType;
+    
+    setShowConfirmation(false);
+    abortRef.current = false;
+    
+    // Calculate total steps based on operation type
+    let totalSteps = items.length;
+    if (type === 'complete') {
+      // For complete: examples (AI) + word audio + example audio + tags
+      const needsExample = items.filter(v => !v.exampleChinese).length;
+      const needsAudio = items.filter(v => !v.wordAudioR2Key).length;
+      const needsTags = items.filter(v => !v.secondaryCategories?.length).length;
+      totalSteps = needsExample + needsAudio + needsExample + needsTags; // example text + word audio + example audio + tags
+    }
+    
     setProgress({
-      total: items.length,
+      total: totalSteps,
       completed: 0,
       successful: 0,
       failed: 0,
@@ -252,35 +332,139 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
     (async () => {
       const allResults: BulkOperationResult[] = [];
       
-      // Process in batches
-      for (let i = 0; i < items.length; i += batchSize) {
-        if (abortRef.current) break;
+      if (type === 'complete') {
+        // STAGED PROCESSING for 'complete':
+        // Stage 1: Generate example sentences (AI) - just text, no audio yet
+        const needsExample = items.filter(v => !v.exampleChinese);
+        if (needsExample.length > 0) {
+          setProgress(prev => ({ ...prev, stage: 'Generating example sentences...' }));
+          for (let i = 0; i < needsExample.length; i += batchSize) {
+            if (abortRef.current) break;
+            const batch = needsExample.slice(i, i + batchSize);
+            for (const item of batch) {
+              if (abortRef.current) break;
+              setProgress(prev => ({ ...prev, current: `${item.hanzi} (example)` }));
+              try {
+                await generateExampleSentence(item.id);
+                allResults.push({ wordId: item.id, hanzi: item.hanzi, success: true, operation: 'complete', stage: 'example' });
+                setProgress(prev => ({ ...prev, completed: prev.completed + 1, successful: prev.successful + 1 }));
+              } catch (err) {
+                allResults.push({ wordId: item.id, hanzi: item.hanzi, success: false, error: (err as Error).message, operation: 'complete', stage: 'example' });
+                setProgress(prev => ({ ...prev, completed: prev.completed + 1, failed: prev.failed + 1 }));
+              }
+              await new Promise(r => setTimeout(r, 100));
+            }
+          }
+        }
         
-        const batch = items.slice(i, i + batchSize);
-        const batchResults = await processBatch(batch, type);
-        allResults.push(...batchResults);
+        // Stage 2: Generate word audio
+        const needsAudio = items.filter(v => !v.wordAudioR2Key);
+        if (needsAudio.length > 0 && !abortRef.current) {
+          setProgress(prev => ({ ...prev, stage: 'Generating word audio...' }));
+          for (let i = 0; i < needsAudio.length; i += batchSize) {
+            if (abortRef.current) break;
+            const batch = needsAudio.slice(i, i + batchSize);
+            for (const item of batch) {
+              if (abortRef.current) break;
+              setProgress(prev => ({ ...prev, current: `${item.hanzi} (word audio)` }));
+              const result = await generateAudioForWord(item);
+              allResults.push({ ...result, stage: 'word_audio' });
+              setProgress(prev => ({
+                ...prev,
+                completed: prev.completed + 1,
+                successful: prev.successful + (result.success ? 1 : 0),
+                failed: prev.failed + (result.success ? 0 : 1),
+              }));
+              await new Promise(r => setTimeout(r, 100));
+            }
+          }
+        }
+        
+        // Stage 3: Generate example audio (for items that now have examples)
+        // Need to refetch to get updated exampleChinese
+        if (!abortRef.current) {
+          setProgress(prev => ({ ...prev, stage: 'Generating example audio...' }));
+          for (let i = 0; i < needsExample.length; i += batchSize) {
+            if (abortRef.current) break;
+            const batch = needsExample.slice(i, i + batchSize);
+            for (const item of batch) {
+              if (abortRef.current) break;
+              setProgress(prev => ({ ...prev, current: `${item.hanzi} (example audio)` }));
+              try {
+                // Fetch the updated vocab to get the example sentence
+                const updated = await api.get<{ exampleChinese?: string }>(`/v1/vocabulary/${item.id}`);
+                if (updated.exampleChinese) {
+                  const audioResult = await synthesize(updated.exampleChinese, voice);
+                  await saveExampleAudio(item.id, audioResult.audioBase64);
+                  allResults.push({ wordId: item.id, hanzi: item.hanzi, success: true, operation: 'complete', stage: 'example_audio' });
+                  setProgress(prev => ({ ...prev, completed: prev.completed + 1, successful: prev.successful + 1 }));
+                }
+              } catch (err) {
+                allResults.push({ wordId: item.id, hanzi: item.hanzi, success: false, error: (err as Error).message, operation: 'complete', stage: 'example_audio' });
+                setProgress(prev => ({ ...prev, completed: prev.completed + 1, failed: prev.failed + 1 }));
+              }
+              await new Promise(r => setTimeout(r, 100));
+            }
+          }
+        }
+        
+        // Stage 4: Auto-tag
+        const needsTags = items.filter(v => !v.secondaryCategories?.length);
+        if (needsTags.length > 0 && !abortRef.current) {
+          setProgress(prev => ({ ...prev, stage: 'Auto-tagging...' }));
+          for (let i = 0; i < needsTags.length; i += batchSize) {
+            if (abortRef.current) break;
+            const batch = needsTags.slice(i, i + batchSize);
+            for (const item of batch) {
+              if (abortRef.current) break;
+              setProgress(prev => ({ ...prev, current: `${item.hanzi} (tags)` }));
+              const result = await tagWord(item);
+              allResults.push({ ...result, stage: 'tags' });
+              setProgress(prev => ({
+                ...prev,
+                completed: prev.completed + 1,
+                successful: prev.successful + (result.success ? 1 : 0),
+                failed: prev.failed + (result.success ? 0 : 1),
+              }));
+              await new Promise(r => setTimeout(r, 100));
+            }
+          }
+        }
+      } else {
+        // Simple processing for single operation types
+        for (let i = 0; i < items.length; i += batchSize) {
+          if (abortRef.current) break;
+          
+          const batch = items.slice(i, i + batchSize);
+          const batchResults = await processBatch(batch, type);
+          allResults.push(...batchResults);
+        }
       }
       
       setIsRunning(false);
+      setProgress(prev => ({ ...prev, stage: 'Complete!' }));
       
       const successCount = allResults.filter(r => r.success).length;
-      const typeLabel = type === 'audio' ? 'audio' : 
-                        type === 'example' ? 'example sentences' :
-                        type === 'tags' ? 'tags' : 'items';
-      
       toast.success(
         'Bulk operation complete',
-        `Generated ${typeLabel} for ${successCount}/${allResults.length} words`
+        `Processed ${successCount}/${allResults.length} operations successfully`
       );
       
       onComplete?.(allResults);
     })();
-  }, [batchSize, onComplete]);
+  }, [itemsToProcess, operationType, batchSize, onComplete, voice]);
+
+  // Cancel confirmation
+  const cancelConfirmation = useCallback(() => {
+    setShowConfirmation(false);
+    setItemsToProcess([]);
+    setCostEstimate(null);
+  }, []);
 
   // Abort operation
   const abort = useCallback(() => {
     abortRef.current = true;
-    toast.info('Stopping...', 'Current batch will complete');
+    toast.info('Stopping...', 'Current item will complete');
   }, []);
 
   // Close modal
@@ -294,9 +478,14 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
   return {
     isRunning,
     showModal,
+    showConfirmation,
     operationType,
     progress,
-    startBulkOperation,
+    costEstimate,
+    itemsToProcess,
+    startBulkOperation: requestBulkOperation,
+    confirmAndRun,
+    cancelConfirmation,
     abort,
     closeModal,
   };
