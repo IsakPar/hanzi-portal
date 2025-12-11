@@ -27,6 +27,7 @@ export interface VocabPreview {
   hasAudio: boolean;
   hasExample: boolean;
   usedInLesson: boolean;
+  isComplete?: boolean;
 }
 
 export interface PreviewReleaseResponse {
@@ -49,15 +50,19 @@ export interface PreviewReleaseResponse {
     missingAudio: number;
     inLessons: number;
     notInLessons: number;
+    complete?: number;
+    incomplete?: number;
     items: VocabPreview[];
   };
   suggestedVersion: string;
   previewHash: string;
   hasChanges: boolean;
+  canForceShip?: boolean;
   summary: {
     totalNew: number;
     totalUpdated: number;
     totalStaying: number;
+    totalLive?: number;
   };
 }
 

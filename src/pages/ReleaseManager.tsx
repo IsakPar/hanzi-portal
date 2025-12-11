@@ -488,12 +488,34 @@ export function ReleaseManager() {
                   </div>
                 )}
 
-                {/* No Changes */}
+                {/* No Changes - but allow force re-ship */}
                 {!preview.hasChanges && (
-                  <div className="bg-slate-800/50 rounded-2xl p-12 border border-slate-700 text-center">
+                  <div className="bg-slate-800/50 rounded-2xl p-8 border border-slate-700 text-center">
                     <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-white mb-2">All Caught Up!</h3>
-                    <p className="text-slate-400">No pending changes for HSK {selectedHsk}</p>
+                    <h3 className="text-xl font-semibold text-white mb-2">No New Lessons</h3>
+                    <p className="text-slate-400 mb-4">No pending lesson changes for HSK {selectedHsk}</p>
+                    
+                    {/* Show option to re-ship if there are live lessons */}
+                    {(preview.summary?.totalLive ?? 0) > 0 && (
+                      <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                        <p className="text-amber-400 text-sm mb-3">
+                          <strong>Want to update vocab?</strong> You can re-ship {preview.summary.totalLive} live lesson(s) 
+                          to apply the quality gate and remove incomplete vocabulary.
+                        </p>
+                        <Button
+                          onClick={() => {
+                            // Select all live lessons for re-shipping
+                            const liveIds = preview.pendingChanges.stayingLessons?.map(l => l.id) || [];
+                            setSelectedLessonIds(new Set(liveIds));
+                          }}
+                          variant="outline"
+                          className="border-amber-500/50 text-amber-400 hover:bg-amber-500/20"
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Select Live Lessons for Re-Ship
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -520,18 +542,22 @@ export function ReleaseManager() {
                   </div>
                   
                   {/* Stats Row */}
-                  <div className="grid grid-cols-4 gap-3 mb-4">
+                  <div className="grid grid-cols-5 gap-3 mb-4">
                     <div className="bg-slate-700/30 rounded-lg p-3 text-center">
                       <div className="text-xl font-bold text-white">{preview.vocabulary.total}</div>
                       <div className="text-xs text-slate-500">Total</div>
                     </div>
                     <div className="bg-slate-700/30 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-emerald-400">{preview.vocabulary.inLessons}</div>
+                      <div className="text-xl font-bold text-blue-400">{preview.vocabulary.inLessons}</div>
                       <div className="text-xs text-slate-500">In Lessons</div>
                     </div>
                     <div className="bg-slate-700/30 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-indigo-400">{preview.vocabulary.withAudio}</div>
-                      <div className="text-xs text-slate-500">With Audio</div>
+                      <div className="text-xl font-bold text-emerald-400">{preview.vocabulary.complete ?? preview.vocabulary.withAudio}</div>
+                      <div className="text-xs text-slate-500">✓ Complete</div>
+                    </div>
+                    <div className="bg-slate-700/30 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-amber-400">{preview.vocabulary.incomplete ?? preview.vocabulary.missingAudio}</div>
+                      <div className="text-xs text-slate-500">⚠ Incomplete</div>
                     </div>
                     <div className="bg-slate-700/30 rounded-lg p-3 text-center">
                       <div className={cn(
