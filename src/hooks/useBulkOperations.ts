@@ -223,9 +223,20 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
   };
 
   // Auto-tag a word
+  // Auto-tag a word using bulk endpoint (single word)
   const tagWord = async (vocab: VocabItem): Promise<BulkOperationResult> => {
     try {
-      await api.post(`/v1/vocabulary/${vocab.id}/auto-tag`, {});
+      // Use the bulk endpoint with a single word
+      const response = await api.post<{ 
+        results: { wordId: string; success: boolean; error?: string; secondaryCategories?: string[] }[];
+      }>('/v1/vocabulary/admin/bulk-tag-secondary-categories', {
+        wordIds: [vocab.id],
+      });
+      
+      const result = response.results?.[0];
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Tagging failed');
+      }
       
       return {
         wordId: vocab.id,
@@ -518,6 +529,41 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
     setShowModal(false);
   }, [isRunning, abort]);
 
+  // Retry failed items
+  const retryFailed = useCallback(() => {
+    const failedItems = progress.results.filter(r => !r.success);
+    if (failedItems.length === 0) {
+      toast.info('Nothing to retry', 'No failed items');
+      return;
+    }
+    
+    // Get the vocab items that failed
+    const failedVocab = itemsToProcess.filter(v => 
+      failedItems.some(f => f.wordId === v.id)
+    );
+    
+    if (failedVocab.length === 0) {
+      toast.error('Cannot retry', 'Failed items not found in original list');
+      return;
+    }
+    
+    // Reset progress and restart
+    setProgress({
+      total: failedVocab.length,
+      completed: 0,
+      successful: 0,
+      failed: 0,
+      results: [],
+    });
+    setItemsToProcess(failedVocab);
+    
+    // Trigger confirmation again
+    const estimate = estimateCost(failedVocab, operationType);
+    setCostEstimate(estimate);
+    setShowConfirmation(true);
+    setShowModal(false);
+  }, [progress.results, itemsToProcess, operationType]);
+
   return {
     isRunning,
     showModal,
@@ -531,6 +577,7 @@ export function useBulkOperations(options: UseBulkOperationsOptions = {}) {
     cancelConfirmation,
     abort,
     closeModal,
+    retryFailed,
   };
 }
 

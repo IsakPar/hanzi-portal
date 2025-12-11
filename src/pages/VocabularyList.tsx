@@ -496,6 +496,7 @@ export function VocabularyList() {
         progress={bulkOps.progress}
         onAbort={bulkOps.abort}
         onClose={bulkOps.closeModal}
+        onRetryFailed={bulkOps.retryFailed}
       />
 
       {/* Inline Tag Editor Popover */}

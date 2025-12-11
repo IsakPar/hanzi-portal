@@ -4,7 +4,7 @@
  * Shows progress for bulk vocabulary operations
  */
 
-import { X, CheckCircle2, XCircle, Loader2, Volume2, MessageSquare, Tag, Zap } from 'lucide-react';
+import { X, CheckCircle2, XCircle, Loader2, Volume2, MessageSquare, Tag, Zap, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { BulkOperationType, BulkOperationProgress } from '@/hooks/useBulkOperations';
 
@@ -15,6 +15,7 @@ interface BulkOperationsModalProps {
   progress: BulkOperationProgress;
   onAbort: () => void;
   onClose: () => void;
+  onRetryFailed?: () => void;
 }
 
 const operationLabels: Record<BulkOperationType, { title: string; icon: React.ReactNode }> = {
@@ -31,6 +32,7 @@ export function BulkOperationsModal({
   progress,
   onAbort,
   onClose,
+  onRetryFailed,
 }: BulkOperationsModalProps) {
   if (!isOpen) return null;
 
@@ -38,6 +40,7 @@ export function BulkOperationsModal({
   const percentComplete = progress.total > 0 
     ? Math.round((progress.completed / progress.total) * 100) 
     : 0;
+  const failedCount = progress.results.filter(r => !r.success).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -160,9 +163,21 @@ export function BulkOperationsModal({
               </Button>
             </>
           ) : (
-            <Button onClick={onClose}>
-              Done
-            </Button>
+            <>
+              {failedCount > 0 && onRetryFailed && (
+                <Button 
+                  variant="outline" 
+                  onClick={onRetryFailed}
+                  className="text-red-600 border-red-300 hover:bg-red-50"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Retry {failedCount} Failed
+                </Button>
+              )}
+              <Button onClick={onClose}>
+                Done
+              </Button>
+            </>
           )}
         </div>
       </div>
