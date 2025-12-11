@@ -103,26 +103,43 @@ export function BulkOperationsModal({
             </div>
           </div>
 
-          {/* Recent results */}
-          {progress.results.length > 0 && (
-            <div className="max-h-48 overflow-y-auto border rounded-lg">
-              <div className="divide-y">
-                {progress.results.slice(-10).reverse().map((result, i) => (
+          {/* Failed items - ALWAYS show prominently */}
+          {progress.results.filter(r => !r.success).length > 0 && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-3">
+              <div className="flex items-center gap-2 text-red-700 font-semibold mb-2">
+                <XCircle className="w-5 h-5" />
+                Failed Items ({progress.results.filter(r => !r.success).length})
+              </div>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {progress.results.filter(r => !r.success).map((result, i) => (
                   <div
-                    key={`${result.wordId}-${i}`}
-                    className="flex items-center justify-between px-3 py-2 text-sm"
+                    key={`failed-${result.wordId}-${i}`}
+                    className="flex items-start justify-between text-sm bg-white rounded px-2 py-1.5 border border-red-100"
                   >
-                    <span className="font-medium">{result.hanzi}</span>
-                    {result.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-red-500 truncate max-w-[150px]">
-                          {result.error}
-                        </span>
-                        <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                      </div>
-                    )}
+                    <span className="font-bold text-red-800">{result.hanzi}</span>
+                    <span className="text-red-600 text-xs text-right max-w-[200px]">
+                      {result.error || 'Unknown error'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recent successful results */}
+          {progress.results.filter(r => r.success).length > 0 && (
+            <div className="max-h-32 overflow-y-auto border rounded-lg">
+              <div className="text-xs text-gray-500 px-3 py-1 bg-gray-50 border-b">
+                Recent successes
+              </div>
+              <div className="divide-y">
+                {progress.results.filter(r => r.success).slice(-8).reverse().map((result, i) => (
+                  <div
+                    key={`success-${result.wordId}-${i}`}
+                    className="flex items-center justify-between px-3 py-1.5 text-sm"
+                  >
+                    <span className="font-medium text-gray-700">{result.hanzi}</span>
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
                   </div>
                 ))}
               </div>

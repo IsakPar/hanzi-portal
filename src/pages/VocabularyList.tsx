@@ -257,43 +257,60 @@ export function VocabularyList() {
   }, [selection, filteredVocabulary, bulkTagging]);
 
   // Handle bulk operations (audio, example, tags, complete)
-  const handleBulkOperation = useCallback((type: BulkOperationType) => {
-    // Get items to process - NO LIMIT, process all
-    let itemsToProcess = selection.selectedCount > 0
-      ? filteredVocabulary.filter(v => selection.selectedIds.has(v.id))
-      : filteredVocabulary;
+  // Fetches ALL items matching current filters, not just current page
+  const handleBulkOperation = useCallback(async (type: BulkOperationType) => {
+    toast.info('Loading items...', 'Fetching all matching vocabulary');
     
-    // Filter based on operation type - only process items that need it
-    if (type === 'audio') {
-      itemsToProcess = itemsToProcess.filter(v => !v.wordAudioR2Key);
-    } else if (type === 'example') {
-      itemsToProcess = itemsToProcess.filter(v => !v.exampleChinese);
-    } else if (type === 'tags') {
-      itemsToProcess = itemsToProcess.filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0);
+    try {
+      // Fetch ALL items matching current filters (up to 500)
+      const params: Record<string, string> = { limit: '500', offset: '0' };
+      if (searchTerm) params.search = searchTerm;
+      if (selectedHSK) params.hskLevel = String(selectedHSK);
+      if (selectedCategory) params.category = selectedCategory;
+      if (selectedLesson) params.lessonId = selectedLesson;
+      
+      // Apply the same filter logic as the page
+      if (type === 'audio') {
+        params.has_audio = 'false'; // Only items WITHOUT audio
+      } else if (type === 'example') {
+        params.has_example = 'false'; // Only items WITHOUT example
+      } else if (type === 'tags') {
+        params.missing_secondary = 'true'; // Only items missing tags
+      }
+      // For 'complete', fetch all and let staged processing handle it
+      
+      const response = await searchVocabulary(params);
+      let itemsToProcess = response.results;
+      
+      // If user has selection, filter to only selected items
+      if (selection.selectedCount > 0) {
+        itemsToProcess = itemsToProcess.filter((v: VocabularyEntry) => selection.selectedIds.has(v.id));
+      }
+      
+      if (itemsToProcess.length === 0) {
+        toast.info('Nothing to process', `All items already have ${type === 'audio' ? 'audio' : type === 'example' ? 'examples' : 'tags'}`);
+        return;
+      }
+      
+      // Convert to the format expected by bulkOps
+      const vocabItems = itemsToProcess.map((v: VocabularyEntry) => ({
+        id: v.id,
+        hanzi: v.hanzi,
+        pinyin: v.pinyin,
+        english: v.english,
+        category: v.category,
+        wordAudioR2Key: v.wordAudioR2Key,
+        exampleChinese: v.exampleChinese,
+        exampleAudioR2Key: v.exampleAudioR2Key,
+        secondaryCategories: v.secondaryCategories,
+      }));
+      
+      // This now shows confirmation first with cost estimate
+      bulkOps.startBulkOperation(vocabItems, type);
+    } catch (err) {
+      toast.error('Failed to load items', (err as Error).message);
     }
-    // 'complete' processes all items but stages internally filter by what's needed
-    
-    if (itemsToProcess.length === 0) {
-      toast.info('Nothing to process', `All items already have ${type === 'audio' ? 'audio' : type === 'example' ? 'examples' : 'tags'}`);
-      return;
-    }
-    
-    // Convert to the format expected by bulkOps
-    const vocabItems = itemsToProcess.map(v => ({
-      id: v.id,
-      hanzi: v.hanzi,
-      pinyin: v.pinyin,
-      english: v.english,
-      category: v.category,
-      wordAudioR2Key: v.wordAudioR2Key,
-      exampleChinese: v.exampleChinese,
-      exampleAudioR2Key: v.exampleAudioR2Key,
-      secondaryCategories: v.secondaryCategories,
-    }));
-    
-    // This now shows confirmation first with cost estimate
-    bulkOps.startBulkOperation(vocabItems, type);
-  }, [selection, filteredVocabulary, bulkOps]);
+  }, [selection, searchTerm, selectedHSK, selectedCategory, selectedLesson, bulkOps]);
 
   const handleTagMissing = useCallback(() => {
     const untaggedIds = filteredVocabulary

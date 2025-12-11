@@ -67,7 +67,7 @@ interface VocabFiltersProps {
   bulkTagging?: boolean; // Legacy, kept for compatibility
   onBulkTagSecondary?: () => void; // Legacy, kept for compatibility
   bulkOperationRunning?: boolean;
-  onBulkOperation?: (type: BulkOperationType) => void;
+  onBulkOperation?: (type: BulkOperationType) => void | Promise<void>;
   
   // Stats
   stats: {
