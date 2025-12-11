@@ -51,6 +51,8 @@ interface VocabFiltersProps {
   onFilterIncompleteChange: (value: boolean) => void;
   filterMissingSecondary: boolean;
   onFilterMissingSecondaryChange: (value: boolean) => void;
+  filterInLesson: boolean;
+  onFilterInLessonChange: (value: boolean) => void;
   
   // Selection
   selectedCount: number;
@@ -89,6 +91,8 @@ export function VocabFilters({
   onFilterIncompleteChange,
   filterMissingSecondary,
   onFilterMissingSecondaryChange,
+  filterInLesson,
+  onFilterInLessonChange,
   selectedCount,
   onSelectAll,
   onClearSelection,
@@ -246,6 +250,17 @@ export function VocabFilters({
         >
           <Tag className="w-3.5 h-3.5" />
           Missing Secondary
+        </button>
+        <button
+          onClick={() => onFilterInLessonChange(!filterInLesson)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            filterInLesson
+              ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-400'
+              : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+          }`}
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+          In Lesson
         </button>
         
         {/* Stats */}

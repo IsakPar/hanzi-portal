@@ -4,10 +4,12 @@
  * Section 1 of VocabularyEditor: Hanzi, Pinyin, English, Category, HSK, Tags
  */
 
+import { useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { HanziInput } from "@/components/shared/HanziInput";
 import { COMMON_CATEGORIES, HSK_LEVELS } from "@/components/forms";
+import { Sparkles, Loader2 } from "lucide-react";
 import type { VocabularyEntry } from "@/services/vocabularyAPI";
 
 interface VocabBasicsSectionProps {
@@ -15,6 +17,7 @@ interface VocabBasicsSectionProps {
   onChange: (updates: Partial<VocabularyEntry>) => void;
   tagsInput: string;
   onTagsInputChange: (value: string) => void;
+  onAiTranslate?: () => Promise<{ english: string; pinyin: string } | void>;
 }
 
 export function VocabBasicsSection({
@@ -22,7 +25,22 @@ export function VocabBasicsSection({
   onChange,
   tagsInput,
   onTagsInputChange,
+  onAiTranslate,
 }: VocabBasicsSectionProps) {
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  const handleAiTranslate = async () => {
+    if (!onAiTranslate) return;
+    setIsTranslating(true);
+    try {
+      const result = await onAiTranslate();
+      if (result) {
+        onChange({ english: result.english, pinyin: result.pinyin });
+      }
+    } finally {
+      setIsTranslating(false);
+    }
+  };
   return (
     <div className="space-y-4">
       {/* Hanzi */}
@@ -52,9 +70,25 @@ export function VocabBasicsSection({
           />
         </div>
         <div>
-          <Label htmlFor="english">
-            English <span className="text-red-500">*</span>
-          </Label>
+          <div className="flex items-center justify-between mb-1">
+            <Label htmlFor="english">
+              English <span className="text-red-500">*</span>
+            </Label>
+            {onAiTranslate && entry.hanzi && !entry.english && (
+              <button
+                onClick={handleAiTranslate}
+                disabled={isTranslating}
+                className="flex items-center gap-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 disabled:opacity-50"
+              >
+                {isTranslating ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Sparkles size={12} />
+                )}
+                AI Suggest
+              </button>
+            )}
+          </div>
           <Input
             id="english"
             value={entry.english || ""}

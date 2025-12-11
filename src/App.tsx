@@ -18,6 +18,7 @@ import { Dashboard } from "./pages/Dashboard";
 
 // Heavy editors (lazy loaded - they include many sub-components)
 const LessonEditor = lazy(() => import("./pages/LessonEditor").then(m => ({ default: m.LessonEditor })));
+const LessonReview = lazy(() => import("./pages/LessonReview"));
 const LessonReviewPage = lazy(() => import("./pages/LessonReviewPage").then(m => ({ default: m.LessonReviewPage })));
 const StoryEditor = lazy(() => import("./pages/StoryEditor").then(m => ({ default: m.StoryEditor })));
 const VocabularyEditor = lazy(() => import("./pages/VocabularyEditor").then(m => ({ default: m.VocabularyEditor })));
@@ -35,7 +36,7 @@ const MetadataTaggingPage = lazy(() => import("./pages/MetadataTaggingPage").the
 // Secondary pages (lazy loaded - less frequently accessed)
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard").then(m => ({ default: m.AnalyticsDashboard })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
-const ContentExportPage = lazy(() => import("./pages/ContentExportPage").then(m => ({ default: m.ContentExportPage })));
+const ReleaseManager = lazy(() => import("./pages/ReleaseManager").then(m => ({ default: m.ReleaseManager })));
 const WaitlistPage = lazy(() => import("./pages/WaitlistPage").then(m => ({ default: m.WaitlistPage })));
 const WebhookDebugPage = lazy(() => import("./pages/WebhookDebugPage").then(m => ({ default: m.WebhookDebugPage })));
 const LessonCacheManager = lazy(() => import("./pages/LessonCacheManager"));
@@ -44,6 +45,13 @@ const ControlCenter = lazy(() => import("./pages/ControlCenter"));
 const RateLimits = lazy(() => import("./pages/RateLimits"));
 const SubscriptionsPage = lazy(() => import("./pages/SubscriptionsPage"));
 const PerformancePage = lazy(() => import("./pages/PerformancePage"));
+
+// AI Studio pages (lazy loaded - dedicated workspace)
+const AIStudioGenerate = lazy(() => import("./pages/ai-studio/GeneratePage"));
+const AIStudioEnhance = lazy(() => import("./pages/ai-studio/EnhancePage"));
+const AIStudioDrafts = lazy(() => import("./pages/ai-studio/DraftsPage"));
+const AIStudioDraftDetail = lazy(() => import("./pages/ai-studio/DraftDetailPage"));
+const AIStudioCurriculum = lazy(() => import("./pages/ai-studio/CurriculumPage"));
 
 /**
  * Page loading fallback component
@@ -115,7 +123,7 @@ function AppContent() {
           <Route path="vocabulary/:id/edit" element={<Suspense fallback={<PageLoader />}><VocabularyEditor /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="analytics" element={<Suspense fallback={<PageLoader />}><AnalyticsDashboard /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="settings" element={<AdminGuard><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
-          <Route path="export" element={<AdminGuard><Suspense fallback={<PageLoader />}><ContentExportPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
+          <Route path="export" element={<AdminGuard><Suspense fallback={<PageLoader />}><ReleaseManager /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
           <Route path="webhooks" element={<AdminGuard><Suspense fallback={<PageLoader />}><WebhookDebugPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
           <Route path="lesson-cache" element={<Suspense fallback={<PageLoader />}><LessonCacheManager /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="users" element={<AdminGuard><Suspense fallback={<PageLoader />}><UserManagement /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
@@ -127,8 +135,16 @@ function AppContent() {
 
         {/* Standalone routes (Full screen editors) - PROTECTED with AIAssistantProvider */}
         <Route path="lessons/:lessonId/edit" element={<AuthGuard><AIAssistantProvider><Suspense fallback={<PageLoader />}><LessonEditor /></Suspense></AIAssistantProvider></AuthGuard>} errorElement={<ErrorBoundary />} />
-        <Route path="lessons/:lessonId/review" element={<AuthGuard><Suspense fallback={<PageLoader />}><LessonReviewPage /></Suspense></AuthGuard>} errorElement={<ErrorBoundary />} />
+        <Route path="lessons/review" element={<AuthGuard><Suspense fallback={<PageLoader />}><LessonReview /></Suspense></AuthGuard>} errorElement={<ErrorBoundary />} />
+        <Route path="lessons/:lessonId/connected-words" element={<AuthGuard><Suspense fallback={<PageLoader />}><LessonReviewPage /></Suspense></AuthGuard>} errorElement={<ErrorBoundary />} />
         <Route path="stories/:id/edit" element={<AuthGuard><AIAssistantProvider><Suspense fallback={<PageLoader />}><StoryEditor /></Suspense></AIAssistantProvider></AuthGuard>} errorElement={<ErrorBoundary />} />
+
+        {/* AI Studio - Dedicated workspace for AI lesson generation */}
+        <Route path="ai-studio" element={<AuthGuard><AdminGuard><Suspense fallback={<PageLoader />}><AIStudioGenerate /></Suspense></AdminGuard></AuthGuard>} errorElement={<ErrorBoundary />} />
+        <Route path="ai-studio/enhance" element={<AuthGuard><AdminGuard><Suspense fallback={<PageLoader />}><AIStudioEnhance /></Suspense></AdminGuard></AuthGuard>} errorElement={<ErrorBoundary />} />
+        <Route path="ai-studio/drafts" element={<AuthGuard><AdminGuard><Suspense fallback={<PageLoader />}><AIStudioDrafts /></Suspense></AdminGuard></AuthGuard>} errorElement={<ErrorBoundary />} />
+        <Route path="ai-studio/drafts/:id" element={<AuthGuard><AdminGuard><Suspense fallback={<PageLoader />}><AIStudioDraftDetail /></Suspense></AdminGuard></AuthGuard>} errorElement={<ErrorBoundary />} />
+        <Route path="ai-studio/curriculum" element={<AuthGuard><AdminGuard><Suspense fallback={<PageLoader />}><AIStudioCurriculum /></Suspense></AdminGuard></AuthGuard>} errorElement={<ErrorBoundary />} />
 
         {/* Catch-all - redirect unknown routes to home */}
         <Route path="*" element={<Navigate to="/" replace />} />

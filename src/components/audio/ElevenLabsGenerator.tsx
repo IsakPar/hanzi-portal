@@ -22,7 +22,7 @@ import {
   DEFAULT_SPEED,
   formatCost,
 } from '@/services/lessonAudioAPI';
-import { processAudioAtSpeed } from '@/utils/audioProcessor';
+// Note: We no longer re-encode at different speeds - original audio is preserved
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 
@@ -127,20 +127,20 @@ export function ElevenLabsGenerator({
       setIsSaving(true);
       
       // If speed is not 1.0, process the audio client-side
-      let finalBase64 = audioBase64;
-      let estimatedDurationMs: number | undefined;
+      // NOTE: We save the ORIGINAL audio without speed processing
+      // Speed processing causes pitch shift and quality loss
+      // The playback speed will be applied during real-time playback
+      const finalBase64 = audioBase64;
       
-      if (selectedSpeed !== 1.0) {
-        toast.info('Processing audio...', `Applying ${selectedSpeed}x speed`);
-        finalBase64 = await processAudioAtSpeed(audioBase64, selectedSpeed);
-      }
+      // TODO: In future, store selectedSpeed as metadata
+      console.log('[ElevenLabs] Saving original audio, intended speed:', selectedSpeed);
       
       // Save to R2
       const result = await saveLessonAudio(
         finalBase64, 
         lessonId, 
         blockId,
-        estimatedDurationMs
+        undefined // duration - will be detected from audio
       );
       
       // Store the URL locally so we can display it while waiting for parent to update

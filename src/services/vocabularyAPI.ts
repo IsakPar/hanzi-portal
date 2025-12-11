@@ -20,10 +20,14 @@ export interface VocabularyEntry {
   secondaryCategories?: string[] | null; // e.g., ["people", "relationships"]
   // Audio and examples
   wordAudioR2Key?: string | null;
+  wordAudioUpdatedAt?: number | null; // Unix timestamp for cache busting
   exampleChinese?: string | null;
   examplePinyin?: string | null;
   exampleEnglish?: string | null;
   exampleAudioR2Key?: string | null;
+  exampleAudioUpdatedAt?: number | null; // Unix timestamp for cache busting
+  // Lesson usage (populated by search API)
+  inLessonCount?: number; // Number of lessons this word appears in
 }
 
 // Part of speech options for vocabulary
@@ -45,6 +49,12 @@ export interface VocabularySearchParams {
   hsk_level?: number;
   category?: string;
   lesson_id?: string;  // Filter by lesson's targetVocabulary
+  // Audio/completeness filters (server-side for proper pagination)
+  has_audio?: boolean;
+  has_example?: boolean;
+  incomplete?: boolean;
+  missing_secondary?: boolean;
+  in_lesson?: boolean; // Filter by whether word is used in any lesson
   limit?: number;
   offset?: number;
   sort?: 'hanzi' | 'pinyin' | 'hsk_level' | 'category';
@@ -91,6 +101,13 @@ export async function searchVocabulary(
   if (params.query) searchParams.set('query', params.query);
   if (params.hsk_level) searchParams.set('hsk_level', params.hsk_level.toString());
   if (params.category) searchParams.set('category', params.category);
+  if (params.lesson_id) searchParams.set('lesson_id', params.lesson_id);
+  // Audio/completeness filters
+  if (params.has_audio !== undefined) searchParams.set('has_audio', params.has_audio.toString());
+  if (params.has_example !== undefined) searchParams.set('has_example', params.has_example.toString());
+  if (params.incomplete !== undefined) searchParams.set('incomplete', params.incomplete.toString());
+  if (params.missing_secondary !== undefined) searchParams.set('missing_secondary', params.missing_secondary.toString());
+  if (params.in_lesson !== undefined) searchParams.set('in_lesson', params.in_lesson.toString());
   if (params.limit) searchParams.set('limit', params.limit.toString());
   if (params.offset) searchParams.set('offset', params.offset.toString());
   if (params.sort) searchParams.set('sort', params.sort);
@@ -117,6 +134,59 @@ export async function getCategories(): Promise<string[]> {
     '/v1/vocabulary/admin/categories'
   );
   return response.categories;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SIMPLE WORD SUGGESTIONS (NO AI - PURE DB)
+// ═══════════════════════════════════════════════════════════
+
+export interface SuggestParams {
+  hskLevel: number;          // Required: must match this HSK level
+  category?: string;         // Optional: prefer words in this category
+  pos?: string;              // Optional: prefer words with this POS
+  exclude?: string[];        // Optional: hanzi to exclude from results
+  count?: number;            // How many to return (default 5, max 20)
+}
+
+export interface VocabSuggestion {
+  id: string;
+  hanzi: string;
+  pinyin: string;
+  english: string;
+  category?: string;
+  pos?: string;
+}
+
+export interface SuggestResponse {
+  suggestions: VocabSuggestion[];
+  hskLevel: number;
+  requestedCategory: string | null;
+  requestedPos: string | null;
+  totalPool: number;
+}
+
+/**
+ * Get vocabulary suggestions by HSK level + optional metadata
+ * NO AI - pure database queries!
+ * 
+ * Priority:
+ * 1. Same HSK + Same category + Same POS → most relevant
+ * 2. Same HSK + Same category → good match
+ * 3. Same HSK + Same POS → decent match
+ * 4. Same HSK only → fallback
+ */
+export async function getSuggestions(params: SuggestParams): Promise<SuggestResponse> {
+  const searchParams = new URLSearchParams();
+  
+  searchParams.set('hskLevel', params.hskLevel.toString());
+  if (params.category) searchParams.set('category', params.category);
+  if (params.pos) searchParams.set('pos', params.pos);
+  if (params.exclude && params.exclude.length > 0) {
+    searchParams.set('exclude', params.exclude.join(','));
+  }
+  if (params.count) searchParams.set('count', params.count.toString());
+
+  return api.get<SuggestResponse>(`/v1/vocabulary/suggest?${searchParams.toString()}`);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -188,14 +258,29 @@ export async function deleteVocabulary(id: string): Promise<{ success: boolean }
 
 /**
  * Bulk import vocabulary entries (admin only)
+ * Optionally triggers validator sync after import
  */
 export async function bulkImportVocabulary(
-  data: BulkImportInput
+  data: BulkImportInput,
+  options?: { syncValidator?: boolean }
 ): Promise<{ success: boolean; imported: number }> {
-  return api.post<{ success: boolean; imported: number }>(
+  const result = await api.post<{ success: boolean; imported: number }>(
     '/v1/vocabulary/admin/bulk-import',
     data
   );
+  
+  // Trigger validator sync after successful import
+  if (result.success && options?.syncValidator) {
+    try {
+      const { triggerSync } = await import('./validatorAPI');
+      await triggerSync();
+      console.log('[vocab] Validator synced after bulk import');
+    } catch (err) {
+      console.warn('[vocab] Validator sync failed after import:', err);
+    }
+  }
+  
+  return result;
 }
 
 /**
@@ -270,6 +355,7 @@ export interface AudioPreviewResult {
 export interface AudioSaveResult {
   success: boolean;
   r2Key: string;
+  audioUpdatedAt: number; // Unix timestamp for cache busting
 }
 
 /**
@@ -283,6 +369,21 @@ export async function generateExampleSentence(
     `/v1/vocabulary/admin/${id}/generate-example`,
     { regenerate }
   );
+}
+
+export interface TranslationResult {
+  success: boolean;
+  english: string;
+  pinyin: string;
+  tokensUsed: number;
+}
+
+/**
+ * Translate Chinese to English + Pinyin using AI
+ * Does not require a saved vocabulary entry - works with just hanzi text
+ */
+export async function translateHanzi(hanzi: string): Promise<TranslationResult> {
+  return api.post<TranslationResult>('/v1/vocabulary/admin/translate', { hanzi });
 }
 
 /**

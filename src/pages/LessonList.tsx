@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   Plus, BookOpen, Star, Clock, Search, ChevronDown, ChevronRight,
-  FolderPlus, Loader2, AlertCircle, Edit, FileJson
+  FolderPlus, Loader2, AlertCircle, Edit, FileJson, Trash2
 } from "lucide-react";
 import type { Lesson, LessonType } from "@/types/lesson";
 import type { Unit } from "@/types/unit";
@@ -25,7 +25,8 @@ import { LessonGroupModal, type GroupFormData } from "@/components/lessons/Lesso
 import { lessonAPI } from "@/services/lessonAPI";
 import { 
   getUnits, createUnit, updateUnit, deleteUnit,
-  getUnitLessons, removeLessonFromUnit, addLessonToUnit 
+  getUnitLessons, removeLessonFromUnit, addLessonToUnit,
+  reorderUnitLessons
 } from "@/services/unitsAPI";
 import { toast } from "@/hooks/useToast";
 
@@ -140,6 +141,17 @@ export function LessonList() {
     }
   };
 
+  const handleDeleteLesson = async (lessonId: string, lessonTitle: string) => {
+    if (!confirm(`Delete "${lessonTitle}"? This cannot be undone.`)) return;
+    try {
+      await lessonAPI.delete(lessonId);
+      toast.success('Lesson deleted', `"${lessonTitle}" has been removed`);
+      loadData();
+    } catch (err) {
+      toast.error('Failed to delete lesson');
+    }
+  };
+
   const handleRemoveLessonFromGroup = async (groupId: string, lessonId: string) => {
     try {
       await removeLessonFromUnit(groupId, lessonId);
@@ -163,6 +175,26 @@ export function LessonList() {
       loadData();
     } catch (err) {
       toast.error('Failed to move lesson');
+    }
+  };
+
+  const handleReorderLessons = async (groupId: string, lessonIds: string[]) => {
+    try {
+      await reorderUnitLessons(groupId, lessonIds);
+      // Optimistically update local state
+      setGroups(prev => prev.map(g => {
+        if (g.id === groupId) {
+          const reorderedLessons = lessonIds
+            .map(id => g.lessons.find(l => l.id === id))
+            .filter((l): l is Lesson => l !== undefined);
+          return { ...g, lessons: reorderedLessons };
+        }
+        return g;
+      }));
+      toast.success('Lesson order saved');
+    } catch (err) {
+      toast.error('Failed to reorder lessons');
+      loadData(); // Reload on error to reset
     }
   };
 
@@ -326,13 +358,14 @@ export function LessonList() {
                 onEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
                 onDelete={handleDeleteGroup}
                 onRemoveLesson={(lessonId) => handleRemoveLessonFromGroup(group.id, lessonId)}
+                onReorderLessons={(lessonIds) => handleReorderLessons(group.id, lessonIds)}
               />
             );
           })}
 
           {/* Ungrouped Lessons Section */}
           {filterLessons(ungroupedLessons).length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200">
               <button
                 onClick={() => setExpandedUngrouped(!expandedUngrouped)}
                 className="w-full px-5 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between hover:bg-gray-100 transition-colors"
@@ -359,6 +392,7 @@ export function LessonList() {
                       lesson={lesson}
                       groups={groups}
                       onMoveToGroup={(groupId) => handleMoveToGroup(lesson.id, groupId)}
+                      onDelete={() => handleDeleteLesson(lesson.id, lesson.title)}
                     />
                   ))}
                 </div>
@@ -438,15 +472,17 @@ function StatCard({
   );
 }
 
-// Ungrouped Lesson Row with Move Menu
+// Ungrouped Lesson Row with Move Menu and Delete
 function UngroupedLessonRow({ 
   lesson, 
   groups,
   onMoveToGroup,
+  onDelete,
 }: { 
   lesson: Lesson;
   groups: GroupWithLessons[];
   onMoveToGroup: (groupId: string) => void;
+  onDelete: () => void;
 }) {
   const navigate = useNavigate();
   const config = LESSON_TYPE_CONFIG[lesson.lessonType];
@@ -508,8 +544,8 @@ function UngroupedLessonRow({
           
           {showMenu && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-              <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 max-h-64 overflow-y-auto">
+              <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+              <div className="absolute right-0 bottom-full mb-1 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 max-h-64 overflow-y-auto">
                 <div className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase">
                   Move to group
                 </div>
@@ -539,6 +575,15 @@ function UngroupedLessonRow({
             </>
           )}
         </div>
+        
+        {/* Delete button */}
+        <button
+          onClick={onDelete}
+          className="p-2 hover:bg-red-50 rounded-lg transition-colors text-gray-400 hover:text-red-600"
+          title="Delete lesson"
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
     </div>
   );

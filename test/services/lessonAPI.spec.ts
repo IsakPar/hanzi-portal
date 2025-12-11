@@ -5,7 +5,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { lessonAPI } from '@/services/lessonAPI';
-import { setTokenProvider } from '@/services/api';
 
 describe('Lesson API', () => {
   const mockFetch = vi.fn();
@@ -14,7 +13,7 @@ describe('Lesson API', () => {
   beforeEach(() => {
     global.fetch = mockFetch;
     mockFetch.mockReset();
-    setTokenProvider(async () => 'test-token');
+    // Token provider is mocked globally in test/setup.ts via @/lib/authClient mock
   });
 
   afterEach(() => {
@@ -30,13 +29,13 @@ describe('Lesson API', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockLessons,
+        json: async () => ({ lessons: mockLessons }), // Backend returns { lessons: [...] }
       });
 
       const result = await lessonAPI.getAll({ hskLevel: 1 });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/v1/lessons'),
+        expect.stringContaining('/v1/admin/lessons'),
         expect.any(Object)
       );
       expect(result.lessons).toHaveLength(2);
@@ -45,7 +44,7 @@ describe('Lesson API', () => {
     it('should filter by HSK level', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => [],
+        json: async () => ({ lessons: [] }), // Backend returns { lessons: [...] }
       });
 
       await lessonAPI.getAll({ hskLevel: 3 });

@@ -9,8 +9,9 @@
  * - Related Meaning (AI)
  */
 
-import { X, Folder, Tag, Type, Music, Ruler, Sparkles, RefreshCw } from 'lucide-react';
+import { X, Folder, Tag, Type, Music, Ruler, Sparkles, RefreshCw, BookOpen } from 'lucide-react';
 import type { DistractorSource, VocabWord, DistractorResponse } from '@/services/distractorsAPI';
+import type { LessonWord } from '@/lib/extractLessonVocab';
 import { cn } from '@/lib/utils';
 
 interface AlternativesPanelProps {
@@ -20,6 +21,8 @@ interface AlternativesPanelProps {
   onClose: () => void;
   onRefresh?: () => void;
   loading?: boolean;
+  lessonWords?: LessonWord[];
+  excludeWords?: string[];
 }
 
 interface CategorySectionProps {
@@ -43,6 +46,14 @@ const colorClasses = {
 function CategorySection({ title, subtitle, icon, words, onSelect, color }: CategorySectionProps) {
   if (words.length === 0) return null;
 
+  // Truncate English to first word/meaning for compact display
+  const getShortEnglish = (english: string) => {
+    if (!english) return '';
+    // Take first meaning before comma/semicolon, max 12 chars
+    const short = english.split(/[,;/]/)[0].trim();
+    return short.length > 12 ? short.slice(0, 10) + '…' : short;
+  };
+
   return (
     <div>
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5">
@@ -56,12 +67,13 @@ function CategorySection({ title, subtitle, icon, words, onSelect, color }: Cate
             key={word.id}
             onClick={() => onSelect(word.hanzi, word)}
             className={cn(
-              "px-2.5 py-1 rounded-md text-sm font-medium transition-colors border",
+              "px-2.5 py-1.5 rounded-md text-sm transition-colors border flex flex-col items-start gap-0",
               colorClasses[color]
             )}
             title={`${word.pinyin} - ${word.english}`}
           >
-            {word.hanzi}
+            <span className="font-medium">{word.hanzi}</span>
+            <span className="text-[10px] opacity-70">{getShortEnglish(word.english)}</span>
           </button>
         ))}
       </div>
@@ -76,8 +88,24 @@ export function AlternativesPanel({
   onClose,
   onRefresh,
   loading = false,
+  lessonWords = [],
+  excludeWords = [],
 }: AlternativesPanelProps) {
+  // Filter lesson words: exclude the source word and any already used
+  const excludeSet = new Set([source.word, ...excludeWords]);
+  const filteredLessonWords: VocabWord[] = lessonWords
+    .filter(w => !excludeSet.has(w.hanzi))
+    .map(w => ({
+      id: `lesson-${w.hanzi}`,
+      hanzi: w.hanzi,
+      pinyin: w.pinyin || '',
+      english: w.english || '',
+      category: 'lesson',
+      hskLevel: source.hskLevel,
+    }));
+
   const hasAny = 
+    filteredLessonWords.length > 0 ||
     distractors.sameCategory.length > 0 ||
     (distractors.sameSecondaryCategory?.length || 0) > 0 ||
     distractors.samePos.length > 0 ||
@@ -129,14 +157,26 @@ export function AlternativesPanel({
           </div>
         ) : (
           <>
-            {/* Same Category - Best */}
+            {/* From This Lesson - Highest Priority */}
+            {filteredLessonWords.length > 0 && (
+              <CategorySection
+                title="From This Lesson"
+                subtitle={`${filteredLessonWords.length} words`}
+                icon={<BookOpen size={14} />}
+                words={filteredLessonWords}
+                onSelect={onSelect}
+                color="green"
+              />
+            )}
+
+            {/* Same Category */}
             <CategorySection
               title="Same Category"
               subtitle={source.category}
               icon={<Folder size={14} />}
               words={distractors.sameCategory}
               onSelect={onSelect}
-              color="green"
+              color="pink"
             />
 
             {/* Same Secondary Category */}

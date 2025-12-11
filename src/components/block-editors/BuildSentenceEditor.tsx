@@ -12,16 +12,19 @@ import { Input } from '@/components/ui/input';
 import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 import { AISuggestButton } from '@/components/ai/AISuggestButton';
 import type { Suggestion } from '@/services/aiSuggestAPI';
+import type { LessonWord } from '@/lib/extractLessonVocab';
 import { cn } from '@/lib/utils';
+import { RubyText } from '@/components/ui/RubyText';
 
 interface BuildSentenceEditorProps {
   block: ExerciseBuildSentenceBlock;
   onChange: (field: string, value: any) => void;
   lessonId?: string;
   hskLevel?: number;
+  lessonWords?: LessonWord[];
 }
 
-export function BuildSentenceEditor({ block, onChange, lessonId = '', hskLevel = 1 }: BuildSentenceEditorProps) {
+export function BuildSentenceEditor({ block, onChange, lessonId = '', hskLevel = 1, lessonWords: _lessonWords = [] }: BuildSentenceEditorProps) {
   const [slots, setSlots] = useState(block.content.slots || [{ content: null, isFixed: false }]);
   const [phrasePool, setPhrasePool] = useState<string[]>(block.content.phrasePool || []);
   
@@ -167,6 +170,10 @@ export function BuildSentenceEditor({ block, onChange, lessonId = '', hskLevel =
                 placeholder={`Phrase ${index + 1}`}
                 className="flex-1"
               />
+              {/* Pinyin display */}
+              {phrase && (
+                <RubyText text={phrase} size="sm" className="min-w-[50px] text-purple-600" />
+              )}
               <InlineAudioStatus
                 text={phrase}
                 audioUrl={undefined}

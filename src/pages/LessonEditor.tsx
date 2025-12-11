@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Save, Eye, Settings, Loader2, FileJson } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { BlockEditor } from "@/components/BlockEditor";
 import { LessonMetadataEditor } from "@/components/lesson-editor/LessonMetadataEditor";
 import type { ContentBlock, Lesson } from "@/types/lesson";
 import { createDefaultBlock } from "@/lib/block-defaults";
+import { extractLessonVocab, type LessonWord } from "@/lib/extractLessonVocab";
 import { logger } from "@/utils/logger";
 import { toast } from "@/hooks/useToast";
 import { useGlobalConfirm } from "@/hooks/useConfirm";
@@ -18,9 +19,8 @@ import { useAbortController } from "@/hooks/useAbortController";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { LessonImportModal } from "@/components/lesson-editor/LessonImportModal";
 import { LessonChecklist } from "@/components/lesson-editor/LessonChecklist";
-import { LessonVocabHealthModal } from "@/components/lesson-editor/LessonVocabHealthModal";
 import { useAIAssistant } from "@/contexts/AIAssistantContext";
-import { Stethoscope } from "lucide-react";
+import { AIPanel } from "@/components/ai/AIPanel";
 
 // Default structure for a new lesson
 const createNewLesson = (): Lesson => ({
@@ -60,7 +60,6 @@ export function LessonEditor() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showHealthModal, setShowHealthModal] = useState(false);
   
   // Ref for save handler (needed for keyboard shortcut)
   const saveHandlerRef = useRef<() => void>(() => {});
@@ -180,6 +179,7 @@ export function LessonEditor() {
       setCurrentDraft(null);
     };
   }, [lesson, setCurrentDraft]);
+
   
   // Keyboard shortcuts
   useSaveShortcut(() => {
@@ -199,6 +199,12 @@ export function LessonEditor() {
 
   // Derived state
   const activeBlock = lesson?.blocks?.find((b) => b.id === activeBlockId);
+  
+  // Extract all vocabulary from lesson blocks (for distractor suggestions)
+  const lessonWords = useMemo<LessonWord[]>(() => {
+    if (!lesson?.blocks) return [];
+    return extractLessonVocab(lesson.blocks);
+  }, [lesson?.blocks]);
 
   // Handlers
   const handleAddBlock = (type: any) => {
@@ -283,19 +289,20 @@ export function LessonEditor() {
     );
   };
 
-  const handleSave = useCallback(async () => {
-    if (!lesson) return;
+  const handleSave = useCallback(async (): Promise<string | null> => {
+    if (!lesson) return null;
 
     try {
       setSaving(true);
+      let savedLessonId: string;
 
       if (isNewLesson) {
         // Create new lesson
         const payload: CreateLessonPayload = {
-          title: lesson.title,
+          title: lesson.title || "Untitled Lesson",
           subtitle: lesson.subtitle,
-          hskLevel: lesson.hskLevel,
-          lessonType: lesson.lessonType,
+          hskLevel: lesson.hskLevel || 1,
+          lessonType: lesson.lessonType || "lesson",
           difficulty: lesson.difficulty,
           estimatedMinutes: lesson.estimatedMinutes,
           grammarPoints: lesson.grammarPoints,
@@ -307,16 +314,20 @@ export function LessonEditor() {
           })),
         };
 
+        // Debug: Log payload before sending
+        logger.log("[LessonEditor] Creating lesson with payload:", JSON.stringify(payload, null, 2));
+
         const response = await lessonAPI.create(payload);
         logger.log("Created lesson:", response);
+        savedLessonId = response.id;
 
         toast.success(
           "Lesson created!",
           `Lesson #${response.lessonNumber} has been created`
         );
 
-        // Navigate to the new lesson's edit page
-        navigate(`/lessons/${response.id}`, { replace: true });
+        // Update lesson state with new ID
+        setLesson(prev => prev ? { ...prev, id: response.id } : prev);
       } else {
         // Update existing lesson
         await lessonAPI.update(lesson.id, {
@@ -325,17 +336,28 @@ export function LessonEditor() {
         });
         logger.log("Updated lesson:", lesson.title);
         toast.success("Lesson saved!", "Changes have been saved successfully");
+        savedLessonId = lesson.id;
       }
 
       setIsDirty(false);
       clearAutoSave(); // Clear auto-save storage after successful save
+      return savedLessonId;
     } catch (err: any) {
       logger.error("Failed to save lesson:", err);
-      toast.error("Failed to save", err.message || "Please try again");
+      // Log more details about the error
+      if (err.response) {
+        logger.error("Backend response:", err.response);
+      }
+      if (err.statusCode) {
+        logger.error("Status code:", err.statusCode);
+      }
+      const errorDetail = err.response?.details || err.response?.error || err.message || "Please try again";
+      toast.error("Failed to save", errorDetail);
+      throw err; // Re-throw so Continue button knows it failed
     } finally {
       setSaving(false);
     }
-  }, [lesson, isNewLesson, navigate]);
+  }, [lesson, isNewLesson]);
 
   // Update ref for keyboard shortcut
   saveHandlerRef.current = handleSave;
@@ -423,9 +445,19 @@ export function LessonEditor() {
             <p className="text-xs text-muted-foreground">
               HSK {lesson.hskLevel} • {lesson.blocks?.length || 0} Blocks
               {isNewLesson && " • Draft"}
+              {isDirty && !lastLocalSave && (
+                <span className="ml-2 text-amber-600 animate-pulse">
+                  • Saving locally...
+                </span>
+              )}
               {isDirty && lastLocalSave && (
                 <span className="ml-2 text-green-600">
-                  • Auto-saved {lastLocalSave.toLocaleTimeString()}
+                  • ✓ Saved locally {lastLocalSave.toLocaleTimeString()}
+                </span>
+              )}
+              {!isDirty && lastLocalSave && (
+                <span className="ml-2 text-gray-500">
+                  • Last edit saved
                 </span>
               )}
             </p>
@@ -441,16 +473,6 @@ export function LessonEditor() {
           >
             <FileJson size={16} className="mr-2" />
             Import
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowHealthModal(true)}
-            title="Check vocabulary health"
-            className="relative"
-          >
-            <Stethoscope size={16} className="mr-2" />
-            Health
           </Button>
           <Button
             variant="outline"
@@ -488,16 +510,30 @@ export function LessonEditor() {
           </Button>
           <Button
             size="sm"
-            onClick={async () => {
-              // Save first if dirty, then navigate to review
-              if (isDirty || isNewLesson) {
-                await handleSave();
+            onClick={() => {
+              // Validate minimum requirements before continuing
+              if (!lesson.title?.trim()) {
+                toast.error("Missing title", "Please add a lesson title before continuing");
+                return;
               }
-              if (lesson?.id) {
-                navigate(`/lessons/${lesson.id}/review`);
+              if (!lesson.blocks || lesson.blocks.length === 0) {
+                toast.error("No content", "Please add at least one block before continuing");
+                return;
               }
+
+              // Store lesson data in sessionStorage for health check page
+              // This does NOT save to database yet - that happens after health check passes
+              const reviewData = {
+                lesson,
+                isNewLesson,
+                existingLessonId: isNewLesson ? null : lessonId,
+              };
+              sessionStorage.setItem('lesson-review-data', JSON.stringify(reviewData));
+              
+              // Navigate to health check page (no ID in URL - uses sessionStorage)
+              navigate('/lessons/review');
             }}
-            disabled={!lesson?.id && !isNewLesson || saving}
+            disabled={saving || !lesson.blocks?.length}
             className="bg-green-600 hover:bg-green-700"
           >
             Continue
@@ -550,6 +586,7 @@ export function LessonEditor() {
                   onChange={handleUpdateBlock} 
                   lessonId={lesson.id}
                   hskLevel={lesson.hskLevel}
+                  lessonWords={lessonWords}
                 />
               </div>
             </div>
@@ -572,7 +609,7 @@ export function LessonEditor() {
 
             {/* Checklist - only show for saved lessons */}
             {!isNewLesson && lesson.id && (
-              <LessonChecklist lessonId={lesson.id} />
+              <LessonChecklist lessonId={lesson.id} blocks={lesson.blocks} />
             )}
 
             <LessonMetadataEditor
@@ -594,13 +631,8 @@ export function LessonEditor() {
         currentHskLevel={lesson.hskLevel}
       />
 
-      {/* Vocabulary Health Modal */}
-      <LessonVocabHealthModal
-        isOpen={showHealthModal}
-        onClose={() => setShowHealthModal(false)}
-        blocks={lesson.blocks || []}
-        lessonId={lesson.id}
-      />
+      {/* Floating AI Assistant Panel */}
+      <AIPanel />
     </div>
   );
 }

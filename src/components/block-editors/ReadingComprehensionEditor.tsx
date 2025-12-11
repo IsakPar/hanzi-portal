@@ -14,6 +14,7 @@ import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 import { AISuggestButton } from '@/components/ai/AISuggestButton';
 import type { Suggestion } from '@/services/aiSuggestAPI';
 import { cn } from '@/lib/utils';
+import { RubyText } from '@/components/ui/RubyText';
 
 interface ReadingComprehensionEditorProps {
   block: ReadingComprehensionBlock;
@@ -131,6 +132,11 @@ export function ReadingComprehensionEditor({ block, onChange, lessonId = '', hsk
                           )}
                         />
                       </div>
+                      
+                      {/* Pinyin display */}
+                      {choice.text && (
+                        <RubyText text={choice.text} size="sm" className="min-w-[50px] text-purple-600" />
+                      )}
                       
                       <InlineAudioStatus
                         text={choice.text || ''}

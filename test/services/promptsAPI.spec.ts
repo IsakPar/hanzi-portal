@@ -10,7 +10,6 @@ import {
   testPrompt,
   createPipeline,
 } from '@/services/promptsAPI';
-import { setTokenProvider } from '@/services/api';
 
 describe('Prompts API', () => {
   const mockFetch = vi.fn();
@@ -19,7 +18,7 @@ describe('Prompts API', () => {
   beforeEach(() => {
     global.fetch = mockFetch;
     mockFetch.mockReset();
-    setTokenProvider(async () => 'test-token');
+    // Token provider is mocked globally in test/setup.ts via @/lib/authClient mock
   });
 
   afterEach(() => {

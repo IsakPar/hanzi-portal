@@ -7,6 +7,7 @@
  */
 
 import type { ContentBlock } from "@/types/lesson";
+import type { LessonWord } from "@/lib/extractLessonVocab";
 import { IntroEditor } from "./block-editors/IntroEditor";
 import { HeroHanziEditor } from "./block-editors/HeroHanziEditor";
 import { ExplainEditor } from "./block-editors/ExplainEditor";
@@ -28,9 +29,10 @@ interface BlockEditorProps {
   onChange: (block: ContentBlock) => void;
   lessonId?: string;
   hskLevel?: number;
+  lessonWords?: LessonWord[];
 }
 
-export function BlockEditor({ block, onChange, lessonId, hskLevel = 1 }: BlockEditorProps) {
+export function BlockEditor({ block, onChange, lessonId, hskLevel = 1, lessonWords = [] }: BlockEditorProps) {
   // Handler for individual field changes (used by block editors)
   const handleFieldChange = (field: string, value: any) => {
     onChange({ ...block, [field]: value });
@@ -68,16 +70,16 @@ export function BlockEditor({ block, onChange, lessonId, hskLevel = 1 }: BlockEd
       return <SpeechPracticeV2Editor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "exercise_multiple_choice":
-      return <MultipleChoiceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
+      return <MultipleChoiceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} lessonWords={lessonWords} />;
     
     case "exercise_drag_sentence":
-      return <DragSentenceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
+      return <DragSentenceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} lessonWords={lessonWords} />;
     
     case "exercise_spot_error":
       return <SpotTheErrorEditor block={block} onChange={handleFieldChange} lessonId={lessonId} />;
     
     case "exercise_build_sentence":
-      return <BuildSentenceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} />;
+      return <BuildSentenceEditor block={block} onChange={handleFieldChange} lessonId={lessonId} hskLevel={hskLevel} lessonWords={lessonWords} />;
     
     case "celebration":
       return <CelebrationEditor block={block} onChange={handleFieldChange} />;

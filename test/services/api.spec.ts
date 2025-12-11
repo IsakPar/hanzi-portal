@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { api, APIError, setTokenProvider } from '@/services/api';
+import { api, APIError } from '@/services/api';
 
 describe('API Service', () => {
   const mockFetch = vi.fn();
@@ -8,8 +8,7 @@ describe('API Service', () => {
   beforeEach(() => {
     global.fetch = mockFetch;
     mockFetch.mockReset();
-    // Set up a mock token provider
-    setTokenProvider(async () => 'test-token');
+    // Token provider is mocked globally in test/setup.ts via @/lib/authClient mock
   });
 
   afterEach(() => {

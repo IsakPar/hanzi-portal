@@ -7,6 +7,7 @@ import {
   MessageSquare,
   AlertTriangle,
   CheckCircle2,
+  BookOpen,
 } from "lucide-react";
 import { HSK_LEVELS, type VocabularyEntry } from "@/services/vocabularyAPI";
 
@@ -33,6 +34,7 @@ export function VocabTableRow({
 
   const hasAudio = !!entry.wordAudioR2Key;
   const hasExample = !!entry.exampleChinese;
+  const inLessonCount = entry.inLessonCount || 0;
   const isComplete = hasAudio && hasExample;
   const tags = entry.secondaryCategories || [];
 
@@ -69,7 +71,7 @@ export function VocabTableRow({
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
         <span className={`text-xs px-2 py-1 rounded font-medium ${getHSKColor(entry.hskLevel)}`}>
-          HSK {entry.hskLevel}
+          {HSK_LEVELS.find(h => h.value === entry.hskLevel)?.label || `HSK ${entry.hskLevel}`}
         </span>
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
@@ -100,6 +102,12 @@ export function VocabTableRow({
           </span>
           <span className={`${hasExample ? 'text-blue-500' : 'text-gray-300'}`} title={hasExample ? 'Has example' : 'No example'}>
             <MessageSquare className="w-4 h-4" />
+          </span>
+          <span 
+            className={`${inLessonCount > 0 ? 'text-indigo-500' : 'text-gray-300'}`} 
+            title={inLessonCount > 0 ? `Used in ${inLessonCount} lesson(s)` : 'Not in any lesson'}
+          >
+            <BookOpen className="w-4 h-4" />
           </span>
           <span title={isComplete ? 'Complete' : 'Incomplete'}>
             {isComplete ? (

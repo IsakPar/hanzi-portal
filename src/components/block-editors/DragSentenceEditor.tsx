@@ -9,17 +9,29 @@
  * 4. Pinyin shown under each word
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { FormField } from '../shared/FormField';
 import type { ExerciseDragSentenceBlock } from '@/types/lesson';
-import { Plus, RotateCcw, Sparkles, Check, X } from 'lucide-react';
+import { Plus, RotateCcw, Sparkles, Check, X, Search, Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { getDistractors, flattenDistractors } from '@/services/distractorsAPI';
+import { searchVocabulary, type VocabularyEntry } from '@/services/vocabularyAPI';
+import type { LessonWord } from '@/lib/extractLessonVocab';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 
 // Use pinyin-pro for client-side pinyin lookup
 import { pinyin } from 'pinyin-pro';
+
+// Debounce hook for search
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
 
 interface WordItem {
   id: string;
@@ -33,13 +45,101 @@ interface DragSentenceEditorProps {
   onChange: (field: string, value: any) => void;
   lessonId?: string;
   hskLevel?: number;
+  lessonWords?: LessonWord[];
 }
 
-export function DragSentenceEditor({ block, onChange, hskLevel = 1 }: DragSentenceEditorProps) {
+export function DragSentenceEditor({ block, onChange, hskLevel = 1, lessonWords = [] }: DragSentenceEditorProps) {
   // All words in the exercise (correct + distractors)
   const [words, setWords] = useState<WordItem[]>([]);
   const [newWordInput, setNewWordInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  
+  // Autocomplete state
+  const [suggestions, setSuggestions] = useState<VocabularyEntry[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+  
+  // Debounced search query
+  const debouncedQuery = useDebounce(newWordInput, 300);
+  
+  // Search vocabulary when input changes (lesson words + DB)
+  useEffect(() => {
+    const searchVocab = async () => {
+      if (!debouncedQuery || debouncedQuery.length < 1) {
+        setSuggestions([]);
+        return;
+      }
+      
+      const q = debouncedQuery.toLowerCase();
+      
+      // First, filter lesson words locally (instant, no network)
+      const lessonMatches: VocabularyEntry[] = lessonWords
+        .filter(w => 
+          w.hanzi.includes(debouncedQuery) ||
+          w.pinyin?.toLowerCase().includes(q) ||
+          w.english?.toLowerCase().includes(q)
+        )
+        .slice(0, 4) // Max 4 from lesson
+        .map(w => ({
+          id: `lesson-${w.hanzi}`,
+          hanzi: w.hanzi,
+          pinyin: w.pinyin || '',
+          english: w.english || '',
+          category: 'lesson',
+          hskLevel: hskLevel,
+        }));
+      
+      // Show lesson matches immediately
+      if (lessonMatches.length > 0) {
+        setSuggestions(lessonMatches);
+        setShowSuggestions(true);
+      }
+      
+      // Then search DB for more results
+      setSearchLoading(true);
+      try {
+        const results = await searchVocabulary({
+          query: debouncedQuery,
+          hsk_level: hskLevel,
+          limit: 8,
+        });
+        
+        // Merge: lesson words first, then DB results (deduplicated)
+        const dbResults = results.results || [];
+        const seenHanzi = new Set(lessonMatches.map(w => w.hanzi));
+        const dedupedDb = dbResults.filter(w => !seenHanzi.has(w.hanzi));
+        
+        setSuggestions([...lessonMatches, ...dedupedDb.slice(0, 8 - lessonMatches.length)]);
+        setShowSuggestions(true);
+      } catch (err) {
+        console.error('Search failed:', err);
+        // Keep lesson matches even if DB fails
+        if (lessonMatches.length === 0) {
+          setSuggestions([]);
+        }
+      } finally {
+        setSearchLoading(false);
+      }
+    };
+    
+    searchVocab();
+  }, [debouncedQuery, hskLevel, lessonWords]);
+  
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        inputRef.current && !inputRef.current.contains(e.target as Node) &&
+        suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Initialize from block content
   useEffect(() => {
@@ -345,30 +445,100 @@ export function DragSentenceEditor({ block, onChange, hskLevel = 1 }: DragSenten
           )}
         </div>
 
-        {/* Add word input */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newWordInput}
-            onChange={(e) => setNewWordInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addWord(newWordInput);
-              }
-            }}
-            placeholder="Add word (e.g., 你好)..."
-            className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          <button
-            type="button"
-            onClick={() => addWord(newWordInput)}
-            disabled={!newWordInput.trim()}
-            className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1"
-          >
-            <Plus size={14} />
-            Add
-          </button>
+        {/* Add word input with autocomplete */}
+        <div className="relative">
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                {searchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+              </div>
+              <input
+                ref={inputRef}
+                type="text"
+                value={newWordInput}
+                onChange={(e) => setNewWordInput(e.target.value)}
+                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (suggestions.length > 0 && showSuggestions) {
+                      // Add first suggestion
+                      addWord(suggestions[0].hanzi);
+                      setShowSuggestions(false);
+                    } else {
+                      addWord(newWordInput);
+                    }
+                  }
+                  if (e.key === 'Escape') {
+                    setShowSuggestions(false);
+                  }
+                }}
+                placeholder="Search by pinyin (e.g., 'ta') or hanzi..."
+                className="w-full pl-9 pr-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => addWord(newWordInput)}
+              disabled={!newWordInput.trim()}
+              className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1"
+            >
+              <Plus size={14} />
+              Add
+            </button>
+          </div>
+          
+          {/* Suggestions Dropdown */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div
+              ref={suggestionsRef}
+              className="absolute z-20 w-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-64 overflow-y-auto"
+            >
+              <div className="px-3 py-2 text-xs text-gray-500 border-b bg-gray-50">
+                Click to add • {suggestions.length} results
+              </div>
+              {suggestions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    addWord(item.hanzi);
+                    setShowSuggestions(false);
+                    setNewWordInput('');
+                  }}
+                  className={cn(
+                    "w-full px-3 py-2 text-left hover:bg-purple-50 flex items-center gap-3 transition-colors",
+                    words.some(w => w.hanzi === item.hanzi) && "bg-gray-50 opacity-50"
+                  )}
+                  disabled={words.some(w => w.hanzi === item.hanzi)}
+                >
+                  <span className="text-lg font-medium text-gray-900 min-w-[40px]">
+                    {item.hanzi}
+                  </span>
+                  <span className="text-sm text-purple-600">
+                    {item.pinyin}
+                  </span>
+                  <span className="text-sm text-gray-500 truncate flex-1">
+                    {item.english}
+                  </span>
+                  {item.hskLevel && (
+                    <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                      HSK{item.hskLevel}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          
+          {/* No results message */}
+          {showSuggestions && newWordInput.length > 0 && suggestions.length === 0 && !searchLoading && (
+            <div className="absolute z-20 w-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 px-3 py-4 text-center text-sm text-gray-500">
+              No vocabulary found for "{newWordInput}"
+              <br />
+              <span className="text-xs">Press Enter to add as custom word</span>
+            </div>
+          )}
         </div>
       </div>
 

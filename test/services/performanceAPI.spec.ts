@@ -11,7 +11,6 @@ import {
   fetchTopEndpoints,
   fetchModelPerformance,
 } from '@/services/performanceAPI';
-import { setTokenProvider } from '@/services/api';
 
 describe('Performance API', () => {
   const mockFetch = vi.fn();
@@ -20,7 +19,7 @@ describe('Performance API', () => {
   beforeEach(() => {
     global.fetch = mockFetch;
     mockFetch.mockReset();
-    setTokenProvider(async () => 'test-token');
+    // Token provider is mocked globally in test/setup.ts via @/lib/authClient mock
   });
 
   afterEach(() => {

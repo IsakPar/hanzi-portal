@@ -1,4 +1,5 @@
-import { Search, Sparkles } from "lucide-react";
+import { Search, Sparkles, Wand2 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAIAssistant } from "@/contexts/AIAssistantContext";
 
@@ -37,6 +38,16 @@ export function Header() {
       </div>
       
       <div className="flex items-center gap-3">
+        {/* AI Studio Button */}
+        <Link
+          to="/ai-studio"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all hover:scale-105 shadow-lg"
+          title="AI Lesson Studio"
+        >
+          <Wand2 size={16} />
+          <span className="hidden sm:inline">AI Studio</span>
+        </Link>
+
         {/* AI Assistant Button */}
         <button 
           onClick={togglePanel}

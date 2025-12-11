@@ -14,19 +14,22 @@ interface IntroEditorProps {
 }
 
 export function IntroEditor({ block, onChange, lessonId = '' }: IntroEditorProps) {
+  // Ensure content exists
+  const content = block.content || {};
+  
   // Helper to update nested content
   const updateContent = (field: string, value: any) => {
     onChange('content', {
-      ...block.content,
+      ...content,
       [field]: value
     });
   };
 
   const updateExample = (field: string, value: string) => {
     onChange('content', {
-      ...block.content,
+      ...content,
       exampleSentence: {
-        ...block.content.exampleSentence,
+        ...(content.exampleSentence || {}),
         [field]: value
       }
     });
@@ -36,7 +39,7 @@ export function IntroEditor({ block, onChange, lessonId = '' }: IntroEditorProps
     <div className="space-y-4">
       <FormField
         label="Hero Hanzi (optional)"
-        value={block.content.heroHanzi || ''}
+        value={content.heroHanzi || ''}
         onChange={(value) => updateContent('heroHanzi', value)}
         placeholder="你"
         helpText="Large character to display at top"
@@ -45,7 +48,7 @@ export function IntroEditor({ block, onChange, lessonId = '' }: IntroEditorProps
       <FormField
         label="English Title"
         required
-        value={block.content.titleEn || ''}
+        value={content.titleEn || ''}
         onChange={(value) => updateContent('titleEn', value)}
         placeholder="Self Introduction"
       />
@@ -53,11 +56,11 @@ export function IntroEditor({ block, onChange, lessonId = '' }: IntroEditorProps
       <FormField
         label="Introduction Text"
         required
-        value={block.content.introText || ''}
+        value={content.introText || ''}
         onChange={(value) => updateContent('introText', value)}
         placeholder="Learn essential greetings..."
         multiline
-        helpText={`${(block.content.introText || '').length}/150 characters (30-second read max)`}
+        helpText={`${(content.introText || '').length}/150 characters (30-second read max)`}
       />
       
       {/* Example Sentence */}
@@ -72,14 +75,14 @@ export function IntroEditor({ block, onChange, lessonId = '' }: IntroEditorProps
             <div className="flex gap-2 items-center">
               <input
                 type="text"
-                value={block.content.exampleSentence?.hanzi || ''}
+                value={content.exampleSentence?.hanzi || ''}
                 onChange={(e) => updateExample('hanzi', e.target.value)}
                 placeholder="你好！我是学生。"
                 className="flex-1 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
               <InlineAudioStatus
-                text={block.content.exampleSentence?.hanzi || ''}
-                audioUrl={block.content.exampleSentence?.audioUrl}
+                text={content.exampleSentence?.hanzi || ''}
+                audioUrl={content.exampleSentence?.audioUrl}
                 lessonId={lessonId || 'draft'}
                 blockId={block.id}
                 optionId="example-sentence"
@@ -91,14 +94,14 @@ export function IntroEditor({ block, onChange, lessonId = '' }: IntroEditorProps
           
           <FormField
             label="Pinyin"
-            value={block.content.exampleSentence?.pinyin || ''}
+            value={content.exampleSentence?.pinyin || ''}
             onChange={(value) => updateExample('pinyin', value)}
             placeholder="Nǐ hǎo! Wǒ shì xuéshēng."
           />
           
           <FormField
             label="Translation"
-            value={block.content.exampleSentence?.translation || ''}
+            value={content.exampleSentence?.translation || ''}
             onChange={(value) => updateExample('translation', value)}
             placeholder="Hello! I'm a student."
           />
@@ -108,7 +111,7 @@ export function IntroEditor({ block, onChange, lessonId = '' }: IntroEditorProps
       <FormField
         label="Primary Button Label"
         required
-        value={block.content.primaryLabel || ''}
+        value={content.primaryLabel || ''}
         onChange={(value) => updateContent('primaryLabel', value)}
         placeholder="Let's Start"
       />

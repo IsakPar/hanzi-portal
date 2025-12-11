@@ -44,7 +44,53 @@ vi.mock('../src/services/api', () => ({
       this.isAborted = false
     }
   },
-  setTokenProvider: vi.fn(),
+}))
+
+// Mock AIAssistantContext - LessonEditor uses useAIAssistant()
+vi.mock('../src/contexts/AIAssistantContext', () => ({
+  useAIAssistant: () => ({
+    isOpen: false,
+    openPanel: vi.fn(),
+    closePanel: vi.fn(),
+    togglePanel: vi.fn(),
+    panelState: { x: 0, y: 0, width: 480, height: 600, isMinimized: false, mode: 'floating' },
+    updatePanelState: vi.fn(),
+    minimizePanel: vi.fn(),
+    restorePanel: vi.fn(),
+    toggleMode: vi.fn(),
+    currentDraft: null,
+    setCurrentDraft: vi.fn(),
+    contextFiles: [],
+    addContextFile: vi.fn(),
+    removeContextFile: vi.fn(),
+    clearContextFiles: vi.fn(),
+    systemFiles: [],
+    loadSystemFiles: vi.fn(),
+    addSystemFile: vi.fn(),
+    updateSystemFile: vi.fn(),
+    deleteSystemFile: vi.fn(),
+    systemFilesLoading: false,
+    messages: [],
+    addMessage: vi.fn(),
+    clearChat: vi.fn(),
+    tuningPrompt: '',
+    setTuningPrompt: vi.fn(),
+    saveTuningPrompt: vi.fn(),
+    resetTuningPrompt: vi.fn(),
+    tuningPromptLoading: false,
+    tuningPromptDirty: false,
+    isTuningExpanded: false,
+    setIsTuningExpanded: vi.fn(),
+    sessionTokens: 0,
+    sessionCost: 0,
+    costSummary: null,
+    updateSessionCost: vi.fn(),
+    loadCostSummary: vi.fn(),
+    isLoading: false,
+    setIsLoading: vi.fn(),
+  }),
+  AIAssistantProvider: ({ children }: { children: React.ReactNode }) => children,
+  DEFAULT_SYSTEM_PROMPT: '',
 }))
 
 // Import pages after mocking

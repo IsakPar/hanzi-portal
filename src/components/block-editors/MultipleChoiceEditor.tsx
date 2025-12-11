@@ -19,17 +19,21 @@ import { AISuggestButton } from '@/components/ai/AISuggestButton';
 import { AlternativesPanel } from '@/components/ai/AlternativesPanel';
 import type { Suggestion } from '@/services/aiSuggestAPI';
 import { getDistractors, flattenDistractors, type DistractorResponse } from '@/services/distractorsAPI';
+import { getSuggestions } from '@/services/vocabularyAPI';
+import type { LessonWord } from '@/lib/extractLessonVocab';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/useToast';
+import { RubyText } from '@/components/ui/RubyText';
 
 interface MultipleChoiceEditorProps {
   block: ExerciseMultipleChoiceBlock;
   onChange: (field: string, value: any) => void;
   lessonId?: string;
   hskLevel?: number;
+  lessonWords?: LessonWord[];
 }
 
-export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel = 1 }: MultipleChoiceEditorProps) {
+export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel = 1, lessonWords = [] }: MultipleChoiceEditorProps) {
   // Default empty array for options if undefined
   const [options, setOptions] = useState(block.content.options || []);
   const [smartFillLoading, setSmartFillLoading] = useState(false);
@@ -80,72 +84,87 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
 
   /**
    * Smart Fill - Auto-populate empty wrong options with pedagogic distractors
+   * Hybrid approach: Try RAG (semantic) first, fall back to simple HSK suggestions
    */
   const handleSmartFill = useCallback(async () => {
-    if (!correctAnswer) {
-      toast.error('Need correct answer', 'Enter the correct answer first');
+    setSmartFillLoading(true);
+    
+    // Get existing Chinese texts to exclude
+    const existingTexts = options
+      .map(o => o.text)
+      .filter(Boolean)
+      .filter(text => /[\u4e00-\u9fff]/.test(text));
+    
+    let available: { hanzi: string }[] = [];
+    let usedRag = false;
+
+    // Try RAG distractors first (semantic matching - better quality)
+    if (correctAnswer && /[\u4e00-\u9fff]/.test(correctAnswer)) {
+      try {
+        console.log('[MCQ Smart Fill] Trying RAG for:', correctAnswer);
+        const response = await getDistractors({
+          word: correctAnswer,
+          maxHskLevel: hskLevel,
+          count: 10,
+        });
+        
+        const allDistractors = flattenDistractors(response.distractors);
+        const existingSet = new Set(existingTexts.map(t => t.toLowerCase()));
+        available = allDistractors.filter(d => !existingSet.has(d.hanzi.toLowerCase()));
+        usedRag = true;
+        console.log('[MCQ Smart Fill] RAG found:', available.length, 'distractors');
+      } catch (err) {
+        console.log('[MCQ Smart Fill] RAG failed, will try simple suggestions');
+      }
+    }
+    
+    // Fall back to simple HSK suggestions if RAG didn't work
+    if (available.length === 0) {
+      try {
+        console.log('[MCQ Smart Fill] Using simple HSK', hskLevel, 'suggestions');
+        const response = await getSuggestions({
+          hskLevel,
+          exclude: existingTexts,
+          count: 10,
+        });
+        available = response.suggestions.map(s => ({ hanzi: s.hanzi }));
+        console.log('[MCQ Smart Fill] Simple found:', available.length, 'words');
+      } catch (err) {
+        console.error('[MCQ Smart Fill] Both methods failed:', err);
+        toast.error('Smart Fill failed', 'Could not fetch suggestions');
+        setSmartFillLoading(false);
+        return;
+      }
+    }
+    
+    if (available.length === 0) {
+      toast.info('No suggestions', `No more HSK ${hskLevel} words available`);
+      setSmartFillLoading(false);
       return;
     }
 
-    setSmartFillLoading(true);
-    try {
-      console.log('[MCQ Smart Fill] Fetching distractors for:', correctAnswer);
-      const response = await getDistractors({
-        word: correctAnswer,
-        maxHskLevel: hskLevel,
-        count: 10,
-      });
-      console.log('[MCQ Smart Fill] Response:', response);
-
-      // Get flattened, prioritized distractors
-      const allDistractors = flattenDistractors(response.distractors);
+    // Fill empty wrong options
+    let filled = 0;
+    const newOptions = options.map((opt) => {
+      if (opt.isCorrect || opt.text) return opt;
       
-      // Filter out existing options
-      const existingTexts = new Set(options.map(o => o.text?.toLowerCase()).filter(Boolean));
-      const available = allDistractors.filter(d => !existingTexts.has(d.hanzi.toLowerCase()));
-
-      if (available.length === 0) {
-        toast.info('No new distractors', 'All available alternatives are already used');
-        return;
-      }
-
-      // Fill empty wrong options
-      let distractorIndex = 0;
-      const newOptions = options.map((opt) => {
-        // Skip correct answer or already filled options
-        if (opt.isCorrect || opt.text) return opt;
-        
-        // Get next distractor
-        const distractor = available[distractorIndex];
-        if (!distractor) return opt;
-        
-        distractorIndex++;
-        return {
-          ...opt,
-          text: distractor.hanzi,
-          audioUrl: undefined,
-        };
-      });
-
-      updateOptions(newOptions);
-      toast.success('Smart Fill complete', `Added ${distractorIndex} distractors`);
-    } catch (err: unknown) {
-      const error = err as Error & { status?: number };
-      console.error('[MCQ Smart Fill] Error:', error);
+      const distractor = available[filled];
+      if (!distractor) return opt;
       
-      let errorMessage = error.message || 'Unknown error';
-      if (error.status === 404 || errorMessage.includes('not found')) {
-        errorMessage = `"${correctAnswer}" isn't in the vocabulary database. Add it first or use a different word.`;
-      }
-      
-      toast.error('Smart Fill failed', errorMessage);
-    } finally {
-      setSmartFillLoading(false);
+      filled++;
+      return { ...opt, text: distractor.hanzi, audioUrl: undefined };
+    });
+
+    updateOptions(newOptions);
+    if (filled > 0) {
+      toast.success('Smart Fill complete', `Added ${filled} ${usedRag ? 'semantic' : 'HSK'} words`);
     }
+    setSmartFillLoading(false);
   }, [correctAnswer, hskLevel, options, updateOptions]);
 
   /**
    * Show alternatives panel for a specific option
+   * Hybrid: Try RAG (semantic) first, fall back to simple HSK suggestions
    */
   const handleShowAlternatives = useCallback(async (index: number) => {
     if (showAlternatives === index) {
@@ -154,45 +173,86 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
       return;
     }
 
-    const optionText = options[index]?.text || correctAnswer;
-    if (!optionText) {
-      toast.info('Enter text first', 'Enter some text to see alternatives');
-      return;
-    }
+    const optionText = options[index]?.text || correctAnswer || '';
+    const excludeTexts = options.map(o => o.text).filter(Boolean);
 
     setShowAlternatives(index);
     setAlternativesLoading(true);
     setAlternativesData(null);
 
-    try {
-      console.log('[MCQ] Fetching distractors for:', optionText, 'HSK:', hskLevel);
-      const response = await getDistractors({
-        word: optionText,
-        maxHskLevel: hskLevel,
-        count: 20,
-      });
-      console.log('[MCQ] Distractors response:', response);
-      setAlternativesData(response);
-    } catch (err: unknown) {
-      const error = err as Error & { status?: number; response?: { error?: string } };
-      console.error('[MCQ] Distractors error:', error);
-      
-      // Provide more specific error messages
-      let errorMessage = error.message || 'Unknown error';
-      let errorTitle = 'Failed to load alternatives';
-      
-      if (error.status === 404 || errorMessage.includes('not found')) {
-        errorTitle = 'Word not in vocabulary';
-        errorMessage = `"${optionText}" isn't in the HSK vocabulary database. Try a different word or add it to vocabulary first.`;
-      } else if (error.status === 401) {
-        errorTitle = 'Authentication error';
-        errorMessage = 'Please refresh the page and try again.';
-      } else if (error.status === 500 || errorMessage.includes('secondary_categories')) {
-        errorTitle = 'Database issue';
-        errorMessage = 'There may be a database migration pending. Contact support if this persists.';
+    // Try RAG distractors first (semantic matching)
+    if (optionText && /[\u4e00-\u9fff]/.test(optionText)) {
+      try {
+        console.log('[MCQ] Trying RAG for:', optionText);
+        const response = await getDistractors({
+          word: optionText,
+          maxHskLevel: hskLevel,
+          count: 20,
+        });
+        console.log('[MCQ] RAG response:', response);
+        setAlternativesData(response);
+        setAlternativesLoading(false);
+        return;
+      } catch (err) {
+        console.log('[MCQ] RAG failed, falling back to simple suggestions');
       }
+    }
+    
+    // Fall back to simple HSK suggestions
+    try {
+      console.log('[MCQ] Using simple HSK', hskLevel, 'suggestions');
+      const response = await getSuggestions({
+        hskLevel,
+        exclude: excludeTexts.filter(t => /[\u4e00-\u9fff]/.test(t)),
+        count: 12,
+      });
+      console.log('[MCQ] Simple suggestions:', response);
       
-      toast.error(errorTitle, errorMessage);
+      // Convert to DistractorResponse format for AlternativesPanel
+      const fakeDistractors: DistractorResponse = {
+        source: { 
+          id: 'suggest', 
+          word: optionText || `HSK ${hskLevel}`, 
+          pinyin: '', 
+          english: 'Random suggestions',
+          category: 'other',
+          hskLevel: hskLevel,
+        },
+        distractors: {
+          sameCategory: response.suggestions.slice(0, 4).map(s => ({
+            id: s.id,
+            hanzi: s.hanzi,
+            pinyin: s.pinyin,
+            english: s.english,
+            category: s.category || 'other',
+            hskLevel: hskLevel,
+          })),
+          sameSecondaryCategory: [],
+          samePos: response.suggestions.slice(4, 8).map(s => ({
+            id: s.id,
+            hanzi: s.hanzi,
+            pinyin: s.pinyin,
+            english: s.english,
+            category: s.category || 'other',
+            hskLevel: hskLevel,
+          })),
+          sameTone: [],
+          similarLength: response.suggestions.slice(8, 12).map(s => ({
+            id: s.id,
+            hanzi: s.hanzi,
+            pinyin: s.pinyin,
+            english: s.english,
+            category: s.category || 'other',
+            hskLevel: hskLevel,
+          })),
+          semantic: [],
+        },
+        total: response.suggestions.length,
+      };
+      setAlternativesData(fakeDistractors);
+    } catch (err) {
+      console.error('[MCQ] Both methods failed:', err);
+      toast.error('No suggestions', 'Could not load alternatives');
       setShowAlternatives(null);
     } finally {
       setAlternativesLoading(false);
@@ -284,6 +344,11 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
                 />
               </div>
               
+              {/* Pinyin display for Chinese text */}
+              {option.text && (
+                <RubyText text={option.text} size="sm" className="min-w-[60px] text-purple-600" />
+              )}
+              
               {/* Audio status for Chinese text */}
               <InlineAudioStatus
                 text={option.text}
@@ -367,6 +432,8 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
                       setShowAlternatives(null);
                       setAlternativesData(null);
                     }}
+                    lessonWords={lessonWords}
+                    excludeWords={excludeTexts}
                   />
                 ) : null}
               </div>

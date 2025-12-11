@@ -1,10 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * HeroHanziEditor - Edit hero hanzi block properties
+ * 
+ * Audio is saved to VOCABULARY (not lesson blocks) to ensure
+ * vocabulary is the single source of truth for word audio.
  */
 
 import { FormField } from '../shared/FormField';
-import { ElevenLabsGenerator } from '../audio/ElevenLabsGenerator';
+import { VocabAudioGenerator } from '../audio/VocabAudioGenerator';
 import type { HeroHanziBlock } from '@/types/lesson';
 
 interface HeroHanziEditorProps {
@@ -13,7 +16,7 @@ interface HeroHanziEditorProps {
   lessonId?: string;
 }
 
-export function HeroHanziEditor({ block, onChange, lessonId }: HeroHanziEditorProps) {
+export function HeroHanziEditor({ block, onChange }: HeroHanziEditorProps) {
   // Helper to update nested content
   const updateContent = (field: string, value: any) => {
     onChange('content', {
@@ -46,15 +49,11 @@ export function HeroHanziEditor({ block, onChange, lessonId }: HeroHanziEditorPr
         placeholder="e.g., Hello"
       />
       
-      {/* AUDIO - ElevenLabs Generator */}
-      {lessonId && block.content.hanzi && (
-        <ElevenLabsGenerator
-          text={block.content.hanzi}
-          lessonId={lessonId}
-          blockId={block.id}
-          savedAudioUrl={block.content.audioUrl}
-          onSaved={(url) => updateContent('audioUrl', url)}
-          onDeleted={() => updateContent('audioUrl', '')}
+      {/* AUDIO - Saves to VOCABULARY (single source of truth) */}
+      {block.content.hanzi && (
+        <VocabAudioGenerator
+          hanzi={block.content.hanzi}
+          label="Word Audio"
         />
       )}
     </div>

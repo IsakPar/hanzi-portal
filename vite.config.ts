@@ -10,4 +10,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Handle CommonJS dependencies like lamejs
+  optimizeDeps: {
+    include: ['lamejs'],
+  },
+  build: {
+    commonjsOptions: {
+      include: [/lamejs/, /node_modules/],
+      transformMixedEsModules: true,
+    },
+  },
 })

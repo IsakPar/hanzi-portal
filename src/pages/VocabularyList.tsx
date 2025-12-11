@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, Zap } from "lucide-react";
 import {
@@ -27,6 +27,9 @@ import {
 } from "@/components/vocabulary-list";
 
 export function VocabularyList() {
+  // DEBUG: Verify new code is loaded
+  console.log('[VocabList] Component loaded - v2 with server-side filters');
+  
   const navigate = useNavigate();
   const confirm = useGlobalConfirm();
   
@@ -51,6 +54,7 @@ export function VocabularyList() {
   const [filterHasExample, setFilterHasExample] = useState(false);
   const [filterIncomplete, setFilterIncomplete] = useState(false);
   const [filterMissingSecondary, setFilterMissingSecondary] = useState(false);
+  const [filterInLesson, setFilterInLesson] = useState(false);
   
   // Inline tag editor state
   const [inlineEditVocab, setInlineEditVocab] = useState<{
@@ -60,25 +64,9 @@ export function VocabularyList() {
     position: { top: number; left: number };
   } | null>(null);
 
-  // Filter vocabulary by completeness (client-side)
-  const filteredVocabulary = useMemo(() => {
-    let result = vocabulary;
-    
-    if (filterHasAudio) {
-      result = result.filter(v => v.wordAudioR2Key);
-    }
-    if (filterHasExample) {
-      result = result.filter(v => v.exampleChinese);
-    }
-    if (filterIncomplete) {
-      result = result.filter(v => !v.wordAudioR2Key || !v.exampleChinese);
-    }
-    if (filterMissingSecondary) {
-      result = result.filter(v => !v.secondaryCategories || v.secondaryCategories.length === 0);
-    }
-    
-    return result;
-  }, [vocabulary, filterHasAudio, filterHasExample, filterIncomplete, filterMissingSecondary]);
+  // Filters are now applied server-side for proper pagination
+  // Just use vocabulary directly
+  const filteredVocabulary = vocabulary;
 
   // Selection hook
   const selection = useSelection(filteredVocabulary);
@@ -125,11 +113,28 @@ export function VocabularyList() {
     loadLessons();
   }, []);
 
-  // Load vocabulary when filters change
+  // Debounced search term
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Debounce search input (300ms delay)
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, [searchTerm]);
+
+  // Load vocabulary when filters change (using debounced search)
   useEffect(() => {
     loadVocabulary();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, selectedHSK, selectedCategory, selectedLesson, page]);
+  }, [debouncedSearchTerm, selectedHSK, selectedCategory, selectedLesson, filterHasAudio, filterHasExample, filterIncomplete, filterMissingSecondary, filterInLesson, page]);
 
   async function loadCategories() {
     try {
@@ -158,16 +163,29 @@ export function VocabularyList() {
       setLoading(true);
       setError(null);
 
-      const response = await searchVocabulary({
-        query: searchTerm || undefined,
+      const params = {
+        query: debouncedSearchTerm || undefined,
         hsk_level: selectedHSK || undefined,
         category: selectedCategory || undefined,
         lesson_id: selectedLesson || undefined,
+        // Server-side filters for proper pagination
+        has_audio: filterHasAudio ? true : undefined,
+        has_example: filterHasExample ? true : undefined,
+        incomplete: filterIncomplete ? true : undefined,
+        missing_secondary: filterMissingSecondary ? true : undefined,
+        in_lesson: filterInLesson ? true : undefined,
         limit,
         offset: page * limit,
-        sort: 'hanzi',
-        order: 'asc',
-      });
+        sort: 'hanzi' as const,
+        order: 'asc' as const,
+      };
+      
+      // Debug: log the params being sent
+      console.log('[VocabList] Fetching with params:', params);
+
+      const response = await searchVocabulary(params);
+      
+      console.log('[VocabList] Response:', { total: response.total, resultsCount: response.results.length });
 
       setVocabulary(response.results);
       setTotal(response.total);
@@ -260,6 +278,15 @@ export function VocabularyList() {
   const handleHSKChange = (value: number | null) => { setSelectedHSK(value); setPage(0); };
   const handleCategoryChange = (value: string) => { setSelectedCategory(value); setPage(0); };
   const handleLessonChange = (value: string) => { setSelectedLesson(value); setPage(0); };
+  const handleFilterHasAudioChange = (value: boolean) => { 
+    console.log('[VocabList] Has Audio toggled to:', value);
+    setFilterHasAudio(value); 
+    setPage(0); 
+  };
+  const handleFilterHasExampleChange = (value: boolean) => { setFilterHasExample(value); setPage(0); };
+  const handleFilterIncompleteChange = (value: boolean) => { setFilterIncomplete(value); setPage(0); };
+  const handleFilterMissingSecondaryChange = (value: boolean) => { setFilterMissingSecondary(value); setPage(0); };
+  const handleFilterInLessonChange = (value: boolean) => { setFilterInLesson(value); setPage(0); };
 
   // Loading state
   if (loading && vocabulary.length === 0) {
@@ -270,7 +297,7 @@ export function VocabularyList() {
     );
   }
 
-  const hasFilters = searchTerm || selectedHSK || selectedCategory || filterHasAudio || filterHasExample || filterIncomplete;
+  const hasFilters = searchTerm || selectedHSK || selectedCategory || filterHasAudio || filterHasExample || filterIncomplete || filterInLesson;
 
   return (
     <div className="p-8">
@@ -288,13 +315,15 @@ export function VocabularyList() {
         lessons={lessons}
         onLessonChange={handleLessonChange}
         filterHasAudio={filterHasAudio}
-        onFilterHasAudioChange={setFilterHasAudio}
+        onFilterHasAudioChange={handleFilterHasAudioChange}
         filterHasExample={filterHasExample}
-        onFilterHasExampleChange={setFilterHasExample}
+        onFilterHasExampleChange={handleFilterHasExampleChange}
         filterIncomplete={filterIncomplete}
-        onFilterIncompleteChange={setFilterIncomplete}
+        onFilterIncompleteChange={handleFilterIncompleteChange}
         filterMissingSecondary={filterMissingSecondary}
-        onFilterMissingSecondaryChange={setFilterMissingSecondary}
+        onFilterMissingSecondaryChange={handleFilterMissingSecondaryChange}
+        filterInLesson={filterInLesson}
+        onFilterInLessonChange={handleFilterInLessonChange}
         selectedCount={selection.selectedCount}
         onSelectAll={selection.selectAll}
         onClearSelection={selection.clear}

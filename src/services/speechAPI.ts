@@ -23,6 +23,7 @@ export interface GenerateSpeechResult {
   format: string;
   charactersUsed: number;
   estimatedCost: number;
+  needsTrim?: boolean; // True for single-char audio that has pinyin context
 }
 
 export interface BatchSegment {
@@ -81,13 +82,18 @@ export async function getSpeechStatus(): Promise<SpeechStatus> {
 
 /**
  * Generate speech from text (preview only, not saved)
+ * @param text - Chinese text to speak
+ * @param voice - Voice ID
+ * @param speed - Playback speed
+ * @param pinyin - Optional pinyin for single-character pronunciation guidance
  */
 export async function generateSpeech(
   text: string,
   voice: string = 'chinese-female-1',
-  speed: number = 1.0
+  speed: number = 1.0,
+  pinyin?: string
 ): Promise<GenerateSpeechResult> {
-  return api.post<GenerateSpeechResult>('/v1/speech/generate', { text, voice, speed });
+  return api.post<GenerateSpeechResult>('/v1/speech/generate', { text, voice, speed, pinyin });
 }
 
 /**

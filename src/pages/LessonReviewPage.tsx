@@ -8,12 +8,13 @@
  * 3. Connected words from RAG (select/deselect)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Loader2, Check, Sparkles, Link2, BookOpen } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Check, Sparkles, Link2, BookOpen, Zap, RefreshCw, CloudDownload, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/services/api';
 import { toast } from '@/hooks/useToast';
+import { getHealth, segmentText, triggerSync, type HealthResponse, type SegmentResponse } from '@/services/validatorAPI';
 
 interface VocabWord {
   id: string;
@@ -47,13 +48,101 @@ export function LessonReviewPage() {
   
   // Selected connected words
   const [selectedConnected, setSelectedConnected] = useState<Set<string>>(new Set());
+  
+  // Vocab Scanner state
+  const [validatorHealth, setValidatorHealth] = useState<HealthResponse | null>(null);
+  const [validatorLoading, setValidatorLoading] = useState(false);
+  const [segmentResult, setSegmentResult] = useState<SegmentResponse | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  // Check validator health
+  const checkValidatorHealth = useCallback(async () => {
+    setValidatorLoading(true);
+    try {
+      const health = await getHealth();
+      console.log('[LessonReview] Validator health:', health);
+      setValidatorHealth(health);
+      return health;
+    } catch (err) {
+      console.error('[LessonReview] Health check failed:', err);
+      setValidatorHealth(null);
+      return null;
+    } finally {
+      setValidatorLoading(false);
+    }
+  }, []);
+
+  // Sync validator curriculum
+  const syncValidator = useCallback(async () => {
+    setSyncing(true);
+    try {
+      console.log('[LessonReview] Triggering sync...');
+      const result = await triggerSync();
+      if (result.success) {
+        toast.success('Validator synced', `${result.word_count} words loaded`);
+        await checkValidatorHealth();
+        return true;
+      } else {
+        toast.error('Sync failed', 'Could not sync validator');
+        return false;
+      }
+    } catch (err) {
+      console.error('[LessonReview] Sync failed:', err);
+      toast.error('Sync failed', err instanceof Error ? err.message : 'Unknown error');
+      return false;
+    } finally {
+      setSyncing(false);
+    }
+  }, [checkValidatorHealth]);
+
+  // Scan/Recheck - segment all used words
+  const handleRecheck = useCallback(async () => {
+    if (usedWords.length === 0) {
+      toast.error('No words to scan', 'Add content to the lesson first');
+      return;
+    }
+
+    setScanning(true);
+    try {
+      // Check if we need to sync first
+      let health = validatorHealth;
+      if (!health) {
+        health = await checkValidatorHealth();
+      }
+
+      // Auto-sync if validator is empty
+      if (health && health.word_count === 0) {
+        console.log('[LessonReview] Validator empty, auto-syncing...');
+        const synced = await syncValidator();
+        if (!synced) {
+          setScanning(false);
+          return;
+        }
+      }
+
+      // Segment all used words/characters
+      console.log('[LessonReview] Segmenting', usedWords.length, 'items...');
+      const result = await segmentText(usedWords);
+      console.log('[LessonReview] Segment result:', result);
+      setSegmentResult(result);
+      
+      toast.success('Scan complete', `Found ${result.all_words.length} unique words`);
+    } catch (err) {
+      console.error('[LessonReview] Scan failed:', err);
+      toast.error('Scan failed', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setScanning(false);
+    }
+  }, [usedWords, validatorHealth, checkValidatorHealth, syncValidator]);
 
   // Load lesson and word data
   useEffect(() => {
     if (lessonId) {
       loadData();
+      checkValidatorHealth();
     }
-  }, [lessonId]);
+  }, [lessonId, checkValidatorHealth]);
 
   const loadData = async () => {
     try {
@@ -207,6 +296,184 @@ export function LessonReviewPage() {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+        </section>
+
+        {/* Vocab Scanner Section */}
+        <section className="bg-white rounded-xl border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Zap size={20} className="text-purple-500" />
+              <h2 className="text-lg font-semibold">Vocab Scanner</h2>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Validator Status */}
+              {syncing ? (
+                <span className="text-xs text-purple-600 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Syncing...
+                </span>
+              ) : validatorLoading ? (
+                <span className="text-xs text-gray-400">Checking...</span>
+              ) : validatorHealth ? (
+                validatorHealth.word_count === 0 ? (
+                  <button
+                    onClick={syncValidator}
+                    disabled={syncing}
+                    className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 flex items-center gap-1"
+                  >
+                    <CloudDownload className="w-3 h-3" />
+                    Needs sync
+                  </button>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                    {validatorHealth.word_count} words
+                  </span>
+                )
+              ) : (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                  Unavailable
+                </span>
+              )}
+              
+              {/* Sync button */}
+              {validatorHealth && validatorHealth.word_count > 0 && (
+                <button
+                  onClick={syncValidator}
+                  disabled={syncing}
+                  className="p-1 hover:bg-gray-200 rounded"
+                  title="Sync vocabulary"
+                >
+                  <CloudDownload className={`w-4 h-4 text-gray-500 ${syncing ? 'animate-pulse' : ''}`} />
+                </button>
+              )}
+              
+              {/* Refresh status */}
+              <button
+                onClick={checkValidatorHealth}
+                disabled={validatorLoading || syncing}
+                className="p-1 hover:bg-gray-200 rounded"
+                title="Refresh status"
+              >
+                <RefreshCw className={`w-4 h-4 text-gray-500 ${validatorLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+          
+          <p className="text-sm text-muted-foreground mb-4">
+            Segment lesson content into individual words and check which ones are in your vocabulary database.
+          </p>
+          
+          {/* Recheck Button */}
+          <Button
+            onClick={handleRecheck}
+            disabled={scanning || syncing || usedWords.length === 0}
+            variant="outline"
+            className="mb-4"
+          >
+            {scanning ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Scanning...
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4 mr-2" />
+                Recheck Words
+              </>
+            )}
+          </Button>
+          
+          {/* Scan Results */}
+          {segmentResult && (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="flex items-center gap-2">
+                {segmentResult.unknown_words.length === 0 ? (
+                  <CheckCircle2 className="w-5 h-5 text-green-500" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-amber-500" />
+                )}
+                <span className="font-medium">
+                  {segmentResult.unknown_words.length === 0 
+                    ? 'All words in curriculum!' 
+                    : `${segmentResult.unknown_words.length} unknown words found`}
+                </span>
+              </div>
+              
+              {/* Segmented Words */}
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="text-sm font-medium text-gray-700 mb-2">
+                  Segmented Words ({segmentResult.all_words.length} unique)
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {segmentResult.all_words.map((word, i) => {
+                    const isUnknown = segmentResult.unknown_words.includes(word);
+                    const isSafe = segmentResult.always_safe_removed.includes(word);
+                    const inCurriculum = segmentResult.curriculum_words.includes(word);
+                    
+                    return (
+                      <span
+                        key={i}
+                        className={`px-2 py-1 rounded text-sm ${
+                          isUnknown
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                            : isSafe
+                            ? 'bg-gray-100 text-gray-500'
+                            : inCurriculum
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-white border border-gray-200'
+                        }`}
+                        title={
+                          isUnknown ? 'Not in vocabulary DB' 
+                            : isSafe ? 'Common word (always safe)' 
+                            : inCurriculum ? 'In curriculum'
+                            : 'Unknown'
+                        }
+                      >
+                        {word}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+              
+              {/* Unknown Words (if any) */}
+              {segmentResult.unknown_words.length > 0 && (
+                <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                  <div className="text-sm font-medium text-amber-800 mb-2">
+                    Words not in vocabulary database:
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {segmentResult.unknown_words.map((word, i) => (
+                      <span
+                        key={i}
+                        className="px-2 py-1 bg-white rounded border border-amber-300 text-sm"
+                      >
+                        {word}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-amber-700 mt-2">
+                    Tip: Add these words to the vocabulary database, or they may be common words not needing explicit teaching.
+                  </p>
+                </div>
+              )}
+              
+              {/* Stats */}
+              <div className="text-xs text-gray-500">
+                {segmentResult.curriculum_words.length} in curriculum • 
+                {segmentResult.always_safe_removed.length} common words skipped • 
+                {segmentResult.unknown_words.length} unknown
+              </div>
+            </div>
+          )}
+          
+          {!segmentResult && usedWords.length === 0 && (
+            <div className="text-sm text-muted-foreground py-4 text-center bg-gray-50 rounded-lg">
+              No content to scan. Add vocabulary to your lesson blocks first.
             </div>
           )}
         </section>

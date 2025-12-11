@@ -224,6 +224,15 @@ export function VocabularyImport() {
     
     if (imported > 0) {
       toast.success('Import complete', `${imported} entries imported${failed > 0 ? `, ${failed} failed` : ''}`);
+      
+      // Trigger validator sync after successful import
+      try {
+        const { triggerSync } = await import('@/services/validatorAPI');
+        await triggerSync();
+        toast.info('Validator synced', 'New vocabulary is now available for validation');
+      } catch (err) {
+        console.warn('[import] Validator sync failed:', err);
+      }
     } else {
       toast.error('Import failed', `All ${failed} entries failed to import`);
     }

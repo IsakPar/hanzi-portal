@@ -1,8 +1,10 @@
 /**
  * AudioPreviewApproval
  * 
- * Reusable component for the ElevenLabs audio preview → adjust speed → approve flow.
+ * Reusable component for TTS audio preview → adjust speed → approve flow.
  * Used in VocabularyEditor for both word audio and example audio.
+ * 
+ * Now uses Azure TTS (no more trimming needed!)
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -11,8 +13,12 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { toast } from '@/hooks/useToast';
-import { processAudioAtSpeed } from '@/utils/audioProcessor';
 import { CDN_BASE_URL } from '@/services/api';
+
+interface GenerateResult {
+  base64: string;
+  needsTrim?: boolean; // Deprecated - Azure TTS doesn't need trimming
+}
 
 interface AudioPreviewApprovalProps {
   /** Label for the audio section (e.g., "Word Audio", "Sentence Audio") */
@@ -23,16 +29,20 @@ interface AudioPreviewApprovalProps {
   colorTheme?: 'purple' | 'blue' | 'green';
   /** Existing saved R2 key (shows "Audio saved" with playback) */
   savedAudioKey?: string | null;
+  /** Timestamp for cache busting (appended to audio URL) */
+  audioUpdatedAt?: number | null;
   /** Whether we can generate (false for new entries) */
   canGenerate?: boolean;
   /** Hint text when cannot generate */
   disabledHint?: string;
   /** Callback to generate new audio (returns base64) */
-  onGenerate: () => Promise<string>;
-  /** Callback to save approved audio (receives base64 at chosen speed) */
-  onSave: (base64: string, speed: number) => Promise<void>;
+  onGenerate: () => Promise<GenerateResult>;
+  /** Callback to save approved audio (receives base64 at chosen speed), returns new timestamp */
+  onSave: (base64: string, speed: number) => Promise<number | void>;
   /** Initial playback speed */
   initialSpeed?: number;
+  /** @deprecated Target word for trimmer - no longer needed with Azure TTS */
+  targetWord?: string;
 }
 
 const themeClasses = {
@@ -64,12 +74,16 @@ export function AudioPreviewApproval({
   icon = <Volume2 className="w-4 h-4" />,
   colorTheme = 'purple',
   savedAudioKey,
+  audioUpdatedAt,
   canGenerate = true,
   disabledHint = '💡 Save the entry first to generate audio',
   onGenerate,
   onSave,
   initialSpeed = 0.7,
+  targetWord: _targetWord = '',
 }: AudioPreviewApprovalProps) {
+  void _targetWord; // Deprecated - no longer needed with Azure TTS
+  
   const [audioBase64, setAudioBase64] = useState<string | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(initialSpeed);
   const [generating, setGenerating] = useState(false);
@@ -86,13 +100,15 @@ export function AudioPreviewApproval({
     }
   }, [playbackSpeed]);
 
-  // Generate new audio
+  // Generate new audio (Azure TTS - always clean, no trimming needed)
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const base64 = await onGenerate();
-      setAudioBase64(base64);
-      toast.success('Audio generated!', 'Adjust speed slider and listen, then approve');
+      const result = await onGenerate();
+      console.log('[AudioPreview] Generated audio size:', result.base64.length, 'chars');
+      
+      setAudioBase64(result.base64);
+      toast.success('Audio generated!', 'Listen and approve when ready');
     } catch (err) {
       toast.error('Generation failed', (err as Error).message);
     } finally {
@@ -114,22 +130,22 @@ export function AudioPreviewApproval({
     }
   };
 
-  // Save approved audio
+  // Save approved audio (Azure TTS - clean audio, no processing needed)
   const handleSave = async () => {
     if (!audioBase64) return;
     
     setSaving(true);
     try {
-      // Process audio at chosen speed if not 1.0
-      let finalBase64 = audioBase64;
-      if (playbackSpeed !== 1.0) {
-        toast.info('Processing audio...', `Applying ${playbackSpeed}x speed`);
-        finalBase64 = await processAudioAtSpeed(audioBase64, playbackSpeed);
-      }
+      console.log('[AudioPreview] Saving audio, size:', audioBase64.length, 'chars');
+      console.log('[AudioPreview] Playback speed metadata:', playbackSpeed);
       
-      await onSave(finalBase64, playbackSpeed);
+      // Save audio directly - Azure TTS produces clean audio
+      // Speed is stored as metadata, mobile app applies it during playback
+      await onSave(audioBase64, playbackSpeed);
       setAudioBase64(null);
-      toast.success('Audio saved!', `Audio saved at ${playbackSpeed}x speed`);
+      
+      const speedMsg = playbackSpeed !== 1.0 ? ` (plays at ${playbackSpeed}x)` : '';
+      toast.success('Audio saved!', `Original quality preserved${speedMsg}`);
     } catch (err) {
       toast.error('Save failed', (err as Error).message);
     } finally {
@@ -163,7 +179,8 @@ export function AudioPreviewApproval({
           <CheckCircle2 className="w-4 h-4 text-green-600" />
           <span className="text-sm text-green-700">Audio saved</span>
           <audio controls className="h-8 flex-1">
-            <source src={`${CDN_BASE_URL}/${savedAudioKey}`} />
+            {/* Cache busting: append timestamp to force fresh fetch */}
+            <source src={`${CDN_BASE_URL}/${savedAudioKey}${audioUpdatedAt ? `?v=${audioUpdatedAt}` : ''}`} />
           </audio>
         </div>
       )}

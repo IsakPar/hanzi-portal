@@ -10,6 +10,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
+import { RubyText } from '@/components/ui/RubyText';
 
 interface SpotTheErrorEditorProps {
   block: ExerciseSpotErrorBlock;
@@ -64,6 +65,10 @@ export function SpotTheErrorEditor({ block, onChange, lessonId = '' }: SpotTheEr
                 placeholder={`Word ${index + 1}`}
                 className="flex-1"
               />
+              {/* Pinyin display */}
+              {word && (
+                <RubyText text={word} size="sm" className="min-w-[50px] text-purple-600" />
+              )}
               <InlineAudioStatus
                 text={word}
                 audioUrl={undefined}

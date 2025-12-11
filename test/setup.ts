@@ -5,6 +5,17 @@ import { vi } from 'vitest'
 process.env.VITE_API_URL = 'https://hanzimaster-backend-v2.isak-parild.workers.dev'
 process.env.VITE_CDN_URL = 'https://content.polymasterlabs.com'
 
+// Mock authClient - provides test tokens for API calls
+vi.mock('@/lib/authClient', () => ({
+  getAccessToken: vi.fn(() => 'test-token'),
+  getRefreshToken: vi.fn(() => 'test-refresh-token'),
+  refreshAccessToken: vi.fn(() => Promise.resolve(false)),
+  getStoredUser: vi.fn(() => ({ id: 'test-user', email: 'test@test.com', name: 'Test', role: 'admin', tier: 'pro' })),
+  setTokens: vi.fn(),
+  clearTokens: vi.fn(),
+  hasTokens: vi.fn(() => true),
+}))
+
 // Mock localStorage
 const localStorageMock = {
   getItem: (key: string) => {

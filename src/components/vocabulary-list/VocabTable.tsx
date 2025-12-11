@@ -8,6 +8,7 @@ import {
   MessageSquare,
   AlertTriangle,
   CheckCircle2,
+  BookOpen,
 } from "lucide-react";
 import { HSK_LEVELS, type VocabularyEntry } from "@/services/vocabularyAPI";
 import { VirtualizedTable, type VirtualizedTableColumn } from "@/components/ui/virtualized-table";
@@ -43,7 +44,8 @@ export function VocabTable({
   const getCompletenessStatus = useCallback((entry: VocabularyEntry) => {
     const hasAudio = !!entry.wordAudioR2Key;
     const hasExample = !!entry.exampleChinese;
-    return { hasAudio, hasExample, isComplete: hasAudio && hasExample };
+    const inLessonCount = entry.inLessonCount || 0;
+    return { hasAudio, hasExample, inLessonCount, isComplete: hasAudio && hasExample };
   }, []);
 
   // Virtualized table columns
@@ -152,9 +154,9 @@ export function VocabTable({
     {
       key: 'status',
       header: 'Status',
-      width: '100px',
+      width: '120px',
       render: (entry) => {
-        const { hasAudio, hasExample, isComplete } = getCompletenessStatus(entry);
+        const { hasAudio, hasExample, inLessonCount, isComplete } = getCompletenessStatus(entry);
         return (
           <div className="flex items-center gap-1.5">
             <span className={`${hasAudio ? 'text-emerald-500' : 'text-gray-300'}`} title={hasAudio ? 'Has audio' : 'No audio'}>
@@ -162,6 +164,12 @@ export function VocabTable({
             </span>
             <span className={`${hasExample ? 'text-blue-500' : 'text-gray-300'}`} title={hasExample ? 'Has example' : 'No example'}>
               <MessageSquare className="w-4 h-4" />
+            </span>
+            <span 
+              className={`${inLessonCount > 0 ? 'text-indigo-500' : 'text-gray-300'}`} 
+              title={inLessonCount > 0 ? `Used in ${inLessonCount} lesson(s)` : 'Not in any lesson'}
+            >
+              <BookOpen className="w-4 h-4" />
             </span>
             <span title={isComplete ? 'Complete' : 'Incomplete'}>
               {isComplete ? (

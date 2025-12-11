@@ -18,25 +18,33 @@ interface VocabExampleSectionProps {
   isNew: boolean;
   generatingExample: boolean;
   onGenerateExample: () => void;
-  onGenerateAudio: () => Promise<string>;
-  onSaveAudio: (base64: string) => Promise<void>;
+  onGenerateAudio: () => Promise<{ base64: string; needsTrim?: boolean }>;
+  onSaveAudio: (base64: string) => Promise<number | void>;
 }
 
 export function VocabExampleSection({
   entry,
   onChange,
-  isNew,
+  isNew: _isNew, // No longer used to block generation
   generatingExample,
   onGenerateExample,
   onGenerateAudio,
   onSaveAudio,
 }: VocabExampleSectionProps) {
+  // Check if minimum required fields are filled (for auto-save)
+  const canGenerate = !!(
+    entry.hanzi?.trim() &&
+    entry.pinyin?.trim() &&
+    entry.english?.trim() &&
+    entry.category?.trim()
+  );
+  
   return (
     <div className="space-y-4">
       {/* AI Generate Button */}
       <Button
         onClick={onGenerateExample}
-        disabled={generatingExample || isNew}
+        disabled={generatingExample || !canGenerate}
         className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
       >
         {generatingExample ? (
@@ -47,9 +55,9 @@ export function VocabExampleSection({
         {generatingExample ? "Generating..." : "✨ Generate Example with AI"}
       </Button>
 
-      {isNew && (
+      {!canGenerate && (
         <p className="text-xs text-blue-600 text-center">
-          💡 Save the entry first to use AI generation
+          💡 Fill in Hanzi, Pinyin, English & Category first
         </p>
       )}
 
@@ -91,8 +99,9 @@ export function VocabExampleSection({
           icon={<Music className="w-4 h-4" />}
           colorTheme="blue"
           savedAudioKey={entry.exampleAudioR2Key}
-          canGenerate={!isNew && !!entry.exampleChinese}
-          disabledHint="💡 Save the entry and add example sentence first"
+          audioUpdatedAt={entry.exampleAudioUpdatedAt}
+          canGenerate={!!entry.exampleChinese?.trim()}
+          disabledHint="💡 Enter example sentence first to generate audio"
           onGenerate={onGenerateAudio}
           onSave={onSaveAudio}
         />

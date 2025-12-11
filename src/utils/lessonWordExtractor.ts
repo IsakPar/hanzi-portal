@@ -3,6 +3,8 @@
  * 
  * Scans all blocks in a lesson and extracts unique Chinese characters/words
  * for vocabulary health checking.
+ * 
+ * Uses vocab-validator /segment endpoint for proper jieba segmentation.
  */
 
 import type { ContentBlock } from '@/types/lesson';
@@ -11,7 +13,7 @@ import type { ContentBlock } from '@/types/lesson';
 const CHINESE_CHAR_REGEX = /[\u4e00-\u9fff]+/g;
 
 /**
- * Extract all unique Chinese words/characters from a lesson's blocks
+ * Extract all unique Chinese text strings from a lesson's blocks (raw, no segmentation)
  */
 export function extractLessonWords(blocks: ContentBlock[]): string[] {
   const words = new Set<string>();
@@ -25,6 +27,41 @@ export function extractLessonWords(blocks: ContentBlock[]): string[] {
   }
 
   return Array.from(words).sort();
+}
+
+/**
+ * Extract and SEGMENT Chinese text from lesson blocks using vocab-validator.
+ * Returns properly segmented individual words (e.g., "我们是学生" → ["我们", "是", "学生"])
+ */
+export async function extractAndSegmentLessonWords(blocks: ContentBlock[]): Promise<{
+  rawTexts: string[];
+  segmentedWords: string[];
+  unknownWords: string[];
+  curriculumWords: string[];
+}> {
+  // First, extract raw Chinese text
+  const rawTexts = extractLessonWords(blocks);
+  
+  if (rawTexts.length === 0) {
+    return { rawTexts: [], segmentedWords: [], unknownWords: [], curriculumWords: [] };
+  }
+  
+  // Call vocab-validator to segment
+  try {
+    const { segmentText } = await import('@/services/validatorAPI');
+    const result = await segmentText(rawTexts);
+    
+    return {
+      rawTexts,
+      segmentedWords: result.words_filtered,  // Individual words after filtering always_safe
+      unknownWords: result.unknown_words,
+      curriculumWords: result.curriculum_words,
+    };
+  } catch (err) {
+    console.warn('[extractor] Segmentation failed, falling back to raw extraction:', err);
+    // Fallback: return raw texts (old behavior)
+    return { rawTexts, segmentedWords: rawTexts, unknownWords: [], curriculumWords: [] };
+  }
 }
 
 /**

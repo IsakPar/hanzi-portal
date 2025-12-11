@@ -79,16 +79,16 @@ export const lessonAPI = {
     }
 
     const queryString = params.toString();
-    // Using public endpoint for now - returns published lessons
-    const endpoint = `/v1/lessons${queryString ? `?${queryString}` : ''}`;
+    // Use admin endpoint to get ALL lessons (including drafts)
+    const endpoint = `/v1/admin/lessons${queryString ? `?${queryString}` : ''}`;
     
-    // Backend returns array directly, not wrapped in object
-    const lessons = await api.get<Lesson[]>(endpoint, signal);
+    // Backend returns { lessons: [...] } object
+    const response = await api.get<{ lessons: Lesson[] }>(endpoint, signal);
     return {
-      lessons,
-      total: lessons.length,
+      lessons: response.lessons,
+      total: response.lessons.length,
       page: 1,
-      pageSize: lessons.length,
+      pageSize: response.lessons.length,
     };
   },
 

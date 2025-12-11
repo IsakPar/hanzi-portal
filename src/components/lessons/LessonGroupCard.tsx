@@ -1,7 +1,7 @@
 /**
  * LessonGroupCard Component
  * Collapsible card showing a lesson group with its lessons
- * Supports drag-drop for reordering (future)
+ * Supports drag-drop for reordering lessons within the group
  */
 
 import { useState } from 'react';
@@ -10,6 +10,23 @@ import {
   ChevronDown, ChevronRight, Edit, Trash2, Plus,
   Clock, Star, GripVertical, MoreVertical
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { Unit } from '@/types/unit';
 import type { Lesson } from '@/types/lesson';
 import { LESSON_TYPE_CONFIG } from '@/types/lesson';
@@ -22,6 +39,7 @@ interface LessonGroupCardProps {
   onEdit: (group: Unit) => void;
   onDelete: (groupId: string) => void;
   onRemoveLesson: (lessonId: string) => void;
+  onReorderLessons?: (lessonIds: string[]) => void;
 }
 
 export function LessonGroupCard({
@@ -31,13 +49,48 @@ export function LessonGroupCard({
   onEdit,
   onDelete,
   onRemoveLesson,
+  onReorderLessons,
 }: LessonGroupCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showMenu, setShowMenu] = useState(false);
+  const [localLessons, setLocalLessons] = useState(lessons);
   const navigate = useNavigate();
 
-  const publishedCount = lessons.filter(l => l.isPublished).length;
-  const totalMinutes = lessons.reduce((sum, l) => sum + (l.estimatedMinutes || 0), 0);
+  // Update local lessons when props change
+  if (lessons !== localLessons && JSON.stringify(lessons.map(l => l.id)) !== JSON.stringify(localLessons.map(l => l.id))) {
+    setLocalLessons(lessons);
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5, // 5px movement before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = localLessons.findIndex(l => l.id === active.id);
+      const newIndex = localLessons.findIndex(l => l.id === over.id);
+      
+      const newOrder = arrayMove(localLessons, oldIndex, newIndex);
+      setLocalLessons(newOrder);
+      
+      // Call the reorder callback with the new order of IDs
+      if (onReorderLessons) {
+        onReorderLessons(newOrder.map(l => l.id));
+      }
+    }
+  };
+
+  const publishedCount = localLessons.filter(l => l.isPublished).length;
+  const totalMinutes = localLessons.reduce((sum, l) => sum + (l.estimatedMinutes || 0), 0);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
@@ -87,7 +140,7 @@ export function LessonGroupCard({
               <div className="flex items-center gap-4 text-sm mr-2">
                 <span className="flex items-center gap-1 text-gray-700">
                   <Star size={14} className="text-amber-500" />
-                  {publishedCount}/{lessons.length}
+                  {publishedCount}/{localLessons.length}
                 </span>
                 <span className="flex items-center gap-1 text-gray-600">
                   <Clock size={14} />
@@ -144,10 +197,10 @@ export function LessonGroupCard({
         />
       </div>
 
-      {/* Lessons list */}
+      {/* Lessons list with drag-and-drop */}
       {expanded && (
         <div className="border-t border-gray-100">
-          {lessons.length === 0 ? (
+          {localLessons.length === 0 ? (
             <div className="px-5 py-8 text-center">
               <p className="text-gray-500 text-sm mb-3">No lessons in this group yet</p>
               <button
@@ -163,17 +216,28 @@ export function LessonGroupCard({
               </button>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
-              {lessons.map((lesson, index) => (
-                <LessonRow 
-                  key={lesson.id} 
-                  lesson={lesson} 
-                  index={index}
-                  accentColor={group.accentColor}
-                  onRemove={() => onRemoveLesson(lesson.id)}
-                />
-              ))}
-            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={localLessons.map(l => l.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="divide-y divide-gray-100">
+                  {localLessons.map((lesson, index) => (
+                    <SortableLessonRow 
+                      key={lesson.id} 
+                      lesson={lesson} 
+                      index={index}
+                      accentColor={group.accentColor}
+                      onRemove={() => onRemoveLesson(lesson.id)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       )}
@@ -181,7 +245,7 @@ export function LessonGroupCard({
   );
 }
 
-function LessonRow({ 
+function SortableLessonRow({ 
   lesson, 
   index,
   accentColor,
@@ -196,12 +260,37 @@ function LessonRow({
   const config = LESSON_TYPE_CONFIG[lesson.lessonType];
   const [showMenu, setShowMenu] = useState(false);
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: lesson.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : 'auto',
+  };
+
   return (
     <div 
-      className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors group"
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors group bg-white",
+        isDragging && "shadow-lg rounded-lg"
+      )}
     >
-      {/* Drag handle (future) */}
-      <div className="text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Drag handle */}
+      <div 
+        {...attributes}
+        {...listeners}
+        className="text-gray-400 cursor-grab active:cursor-grabbing hover:text-gray-600 transition-colors touch-none"
+      >
         <GripVertical size={16} />
       </div>
 
@@ -267,7 +356,7 @@ function LessonRow({
           {showMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-              <div className="absolute right-0 mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+              <div className="absolute right-0 bottom-full mb-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
                 <button
                   onClick={() => { onRemove(); setShowMenu(false); }}
                   className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
@@ -284,4 +373,3 @@ function LessonRow({
 }
 
 export default LessonGroupCard;
-

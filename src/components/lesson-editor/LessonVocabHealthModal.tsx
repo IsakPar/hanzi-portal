@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { X, Loader2, Volume2, Tag, FileText, Plus, AlertTriangle, CheckCircle, Sparkles, RefreshCw } from 'lucide-react';
-import { extractLessonWords } from '@/utils/lessonWordExtractor';
+import { extractAndSegmentLessonWords } from '@/utils/lessonWordExtractor';
 import { checkVocabularyHealth, type WordHealth, type HealthCheckResponse } from '@/services/vocabularyAPI';
 import type { ContentBlock } from '@/types/lesson';
 import { cn } from '@/lib/utils';
@@ -45,15 +45,16 @@ export function LessonVocabHealthModal({
   // Vocabulary editor slide-over state
   const [editingWord, setEditingWord] = useState<{ id?: string; hanzi: string } | null>(null);
 
-  // Extract and check words
+  // Extract, segment, and check words
   const checkHealth = useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
-      const words = extractLessonWords(blocks);
+      // Use vocab-validator to properly segment sentences into words
+      const { segmentedWords } = await extractAndSegmentLessonWords(blocks);
       
-      if (words.length === 0) {
+      if (segmentedWords.length === 0) {
         setHealthData({
           results: [],
           summary: {
@@ -71,11 +72,12 @@ export function LessonVocabHealthModal({
         return;
       }
 
-      const response = await checkVocabularyHealth(words);
+      // Check segmented words against vocab database
+      const response = await checkVocabularyHealth(segmentedWords);
       setHealthData(response);
     } catch (err) {
       console.error('Health check failed:', err);
-      setError('Failed to check vocabulary health');
+      setError('Failed to check vocabulary health. Make sure the validator service is running.');
     } finally {
       setLoading(false);
     }

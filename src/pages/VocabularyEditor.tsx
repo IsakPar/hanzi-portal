@@ -17,19 +17,20 @@ import {
   createVocabulary,
   updateVocabulary,
   generateExampleSentence,
-  previewWordAudio,
-  previewExampleAudio,
   saveWordAudio,
   saveExampleAudio,
+  translateHanzi,
   type VocabularyEntry,
 } from "@/services/vocabularyAPI";
+import { synthesize as generateAzureSpeech } from "@/services/azureTtsAPI";
 import { tagWord } from "@/services/distractorsAPI";
 import { toast } from "@/hooks/useToast";
 import api from "@/services/api";
+import { pinyin as pinyinPro } from "pinyin-pro";
 
 // Reusable components
 import { AudioPreviewApproval } from "@/components/audio/AudioPreviewApproval";
-import { VOICES, type VoiceId } from "@/components/forms";
+import { AZURE_VOICES, DEFAULT_AZURE_VOICE } from "@/services/azureTtsAPI";
 import {
   VocabBasicsSection,
   VocabExampleSection,
@@ -101,12 +102,29 @@ export function VocabularyEditor({
   
   // AI/Audio state
   const [generatingExample, setGeneratingExample] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState<VoiceId>('chinese-female-1');
+  const [selectedVoice, setSelectedVoice] = useState(DEFAULT_AZURE_VOICE);
 
   // Load entry
   useEffect(() => {
     if (!isNew && id) loadEntry();
   }, [id, isNew]);
+
+  // Auto-generate pinyin when hanzi changes (for new entries only)
+  // Only triggers when hanzi is entered and pinyin is still empty
+  useEffect(() => {
+    if (!isNew) return;
+    if (!entry.hanzi?.trim()) return;
+    if (entry.pinyin?.trim()) return; // Don't overwrite existing pinyin
+    
+    try {
+      const generated = pinyinPro(entry.hanzi, { toneType: "symbol" });
+      if (generated) {
+        setEntry(prev => ({ ...prev, pinyin: generated }));
+      }
+    } catch (err) {
+      // Ignore pinyin generation errors
+    }
+  }, [entry.hanzi, entry.pinyin, isNew]);
 
   async function loadEntry() {
     if (!id) return;
@@ -251,29 +269,46 @@ export function VocabularyEditor({
     return created.id;
   };
 
-  // Audio handlers (now auto-save if needed)
-  const handleGenerateWordAudio = async (): Promise<string> => {
-    const wordId = await ensureSaved();
-    const result = await previewWordAudio(wordId, selectedVoice, 1.0);
-    return result.audioBase64;
+  // Audio handlers
+  // Generate preview uses text directly (no wordId needed)
+  // Save requires entry to be saved first
+  
+  const handleGenerateWordAudio = async (): Promise<{ base64: string; needsTrim?: boolean }> => {
+    if (!entry.hanzi?.trim()) throw new Error("No hanzi to speak");
+    // Azure TTS - accurate tones without needing trim workarounds
+    const result = await generateAzureSpeech(entry.hanzi, selectedVoice, entry.pinyin);
+    return { base64: result.audioBase64, needsTrim: false };
   };
   
-  const handleSaveWordAudio = async (base64: string): Promise<void> => {
+  const handleSaveWordAudio = async (base64: string): Promise<number> => {
     const wordId = await ensureSaved();
     const result = await saveWordAudio(wordId, base64);
-    setEntry(prev => ({ ...prev, wordAudioR2Key: result.r2Key }));
+    // Update state with new R2 key AND timestamp for cache busting
+    setEntry(prev => ({ 
+      ...prev, 
+      wordAudioR2Key: result.r2Key,
+      wordAudioUpdatedAt: result.audioUpdatedAt,
+    }));
+    return result.audioUpdatedAt; // Return timestamp for immediate use
   };
   
-  const handleGenerateExampleAudio = async (): Promise<string> => {
-    const wordId = await ensureSaved();
-    const result = await previewExampleAudio(wordId, selectedVoice, 1.0);
-    return result.audioBase64;
+  const handleGenerateExampleAudio = async (): Promise<{ base64: string; needsTrim?: boolean }> => {
+    if (!entry.exampleChinese?.trim()) throw new Error("No example sentence to speak");
+    // Azure TTS for sentences - natural and accurate
+    const result = await generateAzureSpeech(entry.exampleChinese, selectedVoice);
+    return { base64: result.audioBase64, needsTrim: false };
   };
   
-  const handleSaveExampleAudio = async (base64: string): Promise<void> => {
+  const handleSaveExampleAudio = async (base64: string): Promise<number> => {
     const wordId = await ensureSaved();
     const result = await saveExampleAudio(wordId, base64);
-    setEntry(prev => ({ ...prev, exampleAudioR2Key: result.r2Key }));
+    // Update state with new R2 key AND timestamp for cache busting
+    setEntry(prev => ({ 
+      ...prev, 
+      exampleAudioR2Key: result.r2Key,
+      exampleAudioUpdatedAt: result.audioUpdatedAt,
+    }));
+    return result.audioUpdatedAt; // Return timestamp for immediate use
   };
 
   // Save
@@ -361,11 +396,11 @@ export function VocabularyEditor({
               <Label className="text-sm text-gray-600">Voice:</Label>
               <select
                 value={selectedVoice}
-                onChange={(e) => setSelectedVoice(e.target.value as VoiceId)}
+                onChange={(e) => setSelectedVoice(e.target.value)}
                 className="text-sm px-2 py-1 border border-gray-300 rounded-lg"
               >
-                {VOICES.map((v) => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
+                {AZURE_VOICES.map((v) => (
+                  <option key={v.key} value={v.key}>{v.name} ({v.gender})</option>
                 ))}
               </select>
             </div>
@@ -402,6 +437,12 @@ export function VocabularyEditor({
               onChange={(updates) => setEntry(prev => ({ ...prev, ...updates }))}
               tagsInput={tagsInput}
               onTagsInputChange={setTagsInput}
+              onAiTranslate={async () => {
+                if (!entry.hanzi?.trim()) throw new Error("No hanzi to translate");
+                const result = await translateHanzi(entry.hanzi);
+                toast.success("AI Translated!", `${entry.hanzi} → ${result.english}`);
+                return { english: result.english, pinyin: result.pinyin };
+              }}
             />
             {/* Word Audio */}
             <div className="mt-4">
@@ -410,11 +451,20 @@ export function VocabularyEditor({
                 icon={<Volume2 className="w-4 h-4" />}
                 colorTheme="purple"
                 savedAudioKey={entry.wordAudioR2Key}
-                canGenerate={!!(entry.hanzi && entry.pinyin && entry.english && entry.category)}
-                disabledHint="💡 Fill in Hanzi, Pinyin, English, and Category first"
+                audioUpdatedAt={entry.wordAudioUpdatedAt}
+                canGenerate={!!entry.hanzi?.trim()}
+                disabledHint="💡 Enter Hanzi first to generate audio"
                 onGenerate={handleGenerateWordAudio}
                 onSave={handleSaveWordAudio}
+                targetWord={entry.hanzi || ''}
               />
+              
+              {/* Info for short words */}
+              {(entry.hanzi?.length || 0) <= 2 && (
+                <p className="mt-2 text-xs text-purple-600 bg-purple-50 p-2 rounded-lg border border-purple-100">
+                  💡 For 1-2 character words, audio is generated with a double-take format for accurate pronunciation. Use the trim tool to select the clean word.
+                </p>
+              )}
             </div>
           </section>
 
@@ -512,6 +562,7 @@ export function VocabularyEditor({
           </div>
         </div>
       </div>
+      
     </div>
   );
 }
