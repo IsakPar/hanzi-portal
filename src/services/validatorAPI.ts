@@ -171,13 +171,33 @@ export async function testValidation(request: ValidationRequest): Promise<Valida
 
 /**
  * Extract all Chinese text from lesson blocks for segmentation
+ * 
+ * Supports comma-delimited format: "你好,我,是,老师" → extracts ["你好", "我", "是", "老师"]
+ * Falls back to full text for legacy format (requires jieba segmentation)
  */
 export function extractChineseFromBlocks(blocks: unknown[]): string[] {
   const texts: string[] = [];
   
-  const addIfChinese = (text: unknown) => {
-    if (typeof text === 'string' && /[\u4e00-\u9fff]/.test(text)) {
-      texts.push(text);
+  // Helper: Add text if it contains Chinese
+  // For comma-delimited text, splits into individual words
+  const addChineseText = (text: unknown) => {
+    if (typeof text !== 'string') return;
+    
+    // Check if using comma-delimited format (preferred)
+    if (text.includes(',')) {
+      // Split by comma and add each Chinese word
+      const words = text.split(',').map(w => w.trim()).filter(Boolean);
+      for (const word of words) {
+        // Only add if it contains Chinese characters (skip punctuation)
+        if (/[\u4e00-\u9fff]/.test(word)) {
+          texts.push(word);
+        }
+      }
+    } else {
+      // Legacy: add full text if it contains Chinese
+      if (/[\u4e00-\u9fff]/.test(text)) {
+        texts.push(text);
+      }
     }
   };
   
@@ -190,29 +210,29 @@ export function extractChineseFromBlocks(blocks: unknown[]): string[] {
     // Extract based on block type
     switch (b.type) {
       case 'intro':
-        addIfChinese(content.heroHanzi);
+        addChineseText(content.heroHanzi);
         if (content.exampleSentence) {
-          addIfChinese((content.exampleSentence as Record<string, unknown>).hanzi);
+          addChineseText((content.exampleSentence as Record<string, unknown>).hanzi);
         }
         break;
         
       case 'hero_hanzi':
-        addIfChinese(content.hanzi);
+        addChineseText(content.hanzi);
         break;
         
       case 'pattern':
         if (Array.isArray(content.examples)) {
           for (const ex of content.examples) {
-            addIfChinese((ex as Record<string, unknown>).hanzi);
+            addChineseText((ex as Record<string, unknown>).hanzi);
           }
         }
         break;
         
       case 'exercise_multiple_choice':
-        addIfChinese(content.questionHanzi);
+        addChineseText(content.questionHanzi);
         if (Array.isArray(content.options)) {
           for (const opt of content.options) {
-            addIfChinese((opt as Record<string, unknown>).text);
+            addChineseText((opt as Record<string, unknown>).text);
           }
         }
         break;
@@ -220,29 +240,43 @@ export function extractChineseFromBlocks(blocks: unknown[]): string[] {
       case 'exercise_build_sentence':
         if (Array.isArray(content.wordPool)) {
           for (const word of content.wordPool) {
-            addIfChinese(word);
+            addChineseText(word);
           }
         }
         if (Array.isArray(content.correctOrder)) {
           for (const word of content.correctOrder) {
-            addIfChinese(word);
+            addChineseText(word);
           }
         }
         break;
         
       case 'exercise_drag_sentence':
-        addIfChinese(content.sentenceHanzi);
+        addChineseText(content.sentenceHanzi);
         if (Array.isArray(content.segments)) {
           for (const seg of content.segments) {
-            addIfChinese((seg as Record<string, unknown>).hanzi);
+            addChineseText((seg as Record<string, unknown>).hanzi);
+          }
+        }
+        // Also check wordPool (common field name)
+        if (Array.isArray(content.wordPool)) {
+          for (const word of content.wordPool) {
+            addChineseText(word);
           }
         }
         break;
         
       case 'dialogue':
+        // Check both 'lines' and 'exchanges' (field name varies)
         if (Array.isArray(content.lines)) {
           for (const line of content.lines) {
-            addIfChinese((line as Record<string, unknown>).hanzi);
+            addChineseText((line as Record<string, unknown>).hanzi);
+            addChineseText((line as Record<string, unknown>).text);
+          }
+        }
+        if (Array.isArray(content.exchanges)) {
+          for (const ex of content.exchanges) {
+            addChineseText((ex as Record<string, unknown>).hanzi);
+            addChineseText((ex as Record<string, unknown>).text);
           }
         }
         break;
@@ -250,20 +284,20 @@ export function extractChineseFromBlocks(blocks: unknown[]): string[] {
       case 'reading_passage':
         if (Array.isArray(content.paragraphs)) {
           for (const p of content.paragraphs) {
-            addIfChinese((p as Record<string, unknown>).hanzi);
+            addChineseText((p as Record<string, unknown>).hanzi);
           }
         }
         break;
         
       case 'speaking_practice':
       case 'speech_practice_v2':
-        addIfChinese(content.text);
+        addChineseText(content.text);
         break;
         
       case 'explain':
         if (Array.isArray(content.examples)) {
           for (const ex of content.examples) {
-            addIfChinese((ex as Record<string, unknown>).hanzi);
+            addChineseText((ex as Record<string, unknown>).hanzi);
           }
         }
         break;

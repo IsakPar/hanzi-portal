@@ -44,6 +44,11 @@ interface ValidationResult {
   blockCount: number;
 }
 
+// Helper: Check if text uses comma-delimited format
+function isCommaDelimited(text: string): boolean {
+  return text.includes(',');
+}
+
 function validateLessonJson(json: unknown): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -96,6 +101,45 @@ function validateLessonJson(json: unknown): ValidationResult {
       if (!b.content || typeof b.content !== 'object') {
         errors.push(`Block ${index + 1}: Missing "content" object`);
       }
+
+      // ═══════════════════════════════════════════════════════════════
+      // COMMA-DELIMITED FORMAT VALIDATION
+      // ═══════════════════════════════════════════════════════════════
+      const content = b.content as Record<string, unknown> | undefined;
+      
+      // Validate reading_passage uses comma-delimited format
+      if (b.type === 'reading_passage' && content) {
+        const paragraphs = content.paragraphs as Array<Record<string, unknown>> | undefined;
+        if (paragraphs && Array.isArray(paragraphs)) {
+          paragraphs.forEach((p, pIdx) => {
+            const hanzi = p.hanzi as string | undefined;
+            if (hanzi && !isCommaDelimited(hanzi)) {
+              errors.push(
+                `Block ${index + 1} (reading_passage), Paragraph ${pIdx + 1}: ` +
+                `Must use comma-delimited format. Example: "你好,！,我,是,老师,。" ` +
+                `Got: "${hanzi.substring(0, 30)}..."`
+              );
+            }
+          });
+        }
+      }
+
+      // Validate dialogue uses comma-delimited format
+      if (b.type === 'dialogue' && content) {
+        const exchanges = content.exchanges as Array<Record<string, unknown>> | undefined;
+        if (exchanges && Array.isArray(exchanges)) {
+          exchanges.forEach((ex, exIdx) => {
+            const text = (ex.text || ex.hanzi) as string | undefined;
+            if (text && !isCommaDelimited(text)) {
+              errors.push(
+                `Block ${index + 1} (dialogue), Exchange ${exIdx + 1}: ` +
+                `Must use comma-delimited format. Example: "你好,！,我,叫,小明,。" ` +
+                `Got: "${text.substring(0, 30)}..."`
+              );
+            }
+          });
+        }
+      }
     });
   }
 
@@ -107,7 +151,7 @@ function validateLessonJson(json: unknown): ValidationResult {
   };
 }
 
-// Example JSON for the placeholder
+// Example JSON for the placeholder - Uses comma-delimited format for perfect pinyin alignment
 const EXAMPLE_JSON = `{
   "title": "Hello & Goodbye",
   "subtitle": "Master Chinese greetings",
@@ -115,6 +159,7 @@ const EXAMPLE_JSON = `{
   "lessonType": "lesson",
   "difficulty": "easy",
   "estimatedMinutes": 5,
+  "targetVocabulary": ["你好", "我", "是", "老师"],
   "blocks": [
     {
       "type": "intro",
@@ -130,6 +175,38 @@ const EXAMPLE_JSON = `{
         "hanzi": "你好",
         "pinyin": "nǐ hǎo",
         "translation": "Hello"
+      }
+    },
+    {
+      "type": "reading_passage",
+      "_comment": "Use comma-delimited words for perfect pinyin alignment!",
+      "content": {
+        "instruction": "Read the passage",
+        "paragraphs": [
+          {
+            "hanzi": "你好,！,我,是,老师,。",
+            "translation": "Hello! I am a teacher."
+          }
+        ]
+      }
+    },
+    {
+      "type": "dialogue",
+      "_comment": "Comma-delimited format for dialogues too!",
+      "content": {
+        "scenario": "Meeting someone",
+        "exchanges": [
+          {
+            "speaker": "A",
+            "text": "你好,！,我,叫,小明,。",
+            "translation": "Hello! My name is Xiaoming."
+          },
+          {
+            "speaker": "B",
+            "text": "你好,！,我,是,老师,。",
+            "translation": "Hello! I am a teacher."
+          }
+        ]
       }
     },
     {

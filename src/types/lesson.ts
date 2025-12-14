@@ -148,6 +148,11 @@ export interface ExerciseBuildSentenceBlock extends BaseBlock {
   type: 'exercise_build_sentence';
   content: {
     instruction: string;
+    // New intuitive format
+    sentence?: string;           // "她是___" with ___ for blanks
+    correctAnswer?: string;      // "老师" - the word that fills the blank
+    distractors?: string[];      // ["朋友", "医生"] - wrong options
+    // Legacy format (auto-generated from above)
     slots: SentenceSlot[];
     correctSentence: string[];
     phrasePool: string[];

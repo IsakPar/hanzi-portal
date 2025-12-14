@@ -21,6 +21,7 @@ import {
   Search,
   Volume2,
   VolumeX,
+  AlertTriangle,
 } from 'lucide-react';
 import { 
   previewRelease, 
@@ -96,10 +97,11 @@ export function ReleaseManager() {
       const response = await previewRelease(selectedHsk);
       setPreview(response);
       
-      // Auto-select all pending lessons
+      // Auto-select all pending lessons (including live lessons with changes)
       const allPendingIds = [
         ...response.pendingChanges.newLessons.map(l => l.id),
         ...response.pendingChanges.updatedLessons.map(l => l.id),
+        ...(response.pendingChanges.liveLessonsWithChanges || []).map(l => l.id),
       ];
       setSelectedLessonIds(new Set(allPendingIds));
       setCustomVersion(response.suggestedVersion);
@@ -176,6 +178,7 @@ export function ReleaseManager() {
     const allIds = [
       ...preview.pendingChanges.newLessons.map(l => l.id),
       ...preview.pendingChanges.updatedLessons.map(l => l.id),
+      ...(preview.pendingChanges.liveLessonsWithChanges || []).map(l => l.id),
     ];
     setSelectedLessonIds(new Set(allIds));
   };
@@ -458,6 +461,19 @@ export function ReleaseManager() {
                     icon={<RefreshCw className="w-5 h-5" />}
                     color="amber"
                     lessons={preview.pendingChanges.updatedLessons}
+                    selectedIds={selectedLessonIds}
+                    onToggle={toggleLesson}
+                  />
+                )}
+
+                {/* Live Lessons with Changes (edited since last release) */}
+                {(preview.pendingChanges.liveLessonsWithChanges?.length ?? 0) > 0 && (
+                  <LessonSection
+                    title="Live Lessons with Changes"
+                    subtitle="Modified since last release - needs re-ship"
+                    icon={<AlertTriangle className="w-5 h-5" />}
+                    color="orange"
+                    lessons={preview.pendingChanges.liveLessonsWithChanges || []}
                     selectedIds={selectedLessonIds}
                     onToggle={toggleLesson}
                   />
@@ -1091,7 +1107,7 @@ interface LessonSectionProps {
   title: string;
   subtitle: string;
   icon: React.ReactNode;
-  color: 'emerald' | 'amber' | 'slate';
+  color: 'emerald' | 'amber' | 'slate' | 'orange';
   lessons: LessonPreview[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
@@ -1110,6 +1126,12 @@ function LessonSection({ title, subtitle, icon, color, lessons, selectedIds, onT
       border: 'border-amber-500/20',
       icon: 'bg-amber-500/20 text-amber-400',
       text: 'text-amber-400',
+    },
+    orange: {
+      bg: 'bg-orange-500/10',
+      border: 'border-orange-500/20',
+      icon: 'bg-orange-500/20 text-orange-400',
+      text: 'text-orange-400',
     },
     slate: {
       bg: 'bg-slate-700/30',

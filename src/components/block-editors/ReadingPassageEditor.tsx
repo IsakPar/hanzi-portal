@@ -84,7 +84,7 @@ export function ReadingPassageEditor({ block, onChange, lessonId }: ReadingPassa
 
               <div className="space-y-3">
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Chinese Text <span className="text-destructive">*</span></Label>
+                  <Label className="text-xs text-muted-foreground">Chinese Text (comma-delimited) <span className="text-destructive">*</span></Label>
                   <div className="flex gap-2 items-start">
                     <Textarea
                       value={paragraph.hanzi}
@@ -93,9 +93,9 @@ export function ReadingPassageEditor({ block, onChange, lessonId }: ReadingPassa
                         newParagraphs[index].hanzi = e.target.value;
                         updateParagraphs(newParagraphs);
                       }}
-                      placeholder="我今天很忙..."
+                      placeholder="你好,！,我,是,老师,。"
                       rows={3}
-                      className="font-medium flex-1"
+                      className="font-medium flex-1 font-mono"
                     />
                     <InlineAudioStatus
                       text={paragraph.hanzi || ''}
@@ -107,19 +107,9 @@ export function ReadingPassageEditor({ block, onChange, lessonId }: ReadingPassa
                       disabled={!lessonId}
                     />
                   </div>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Pinyin</Label>
-                  <Input
-                    value={paragraph.pinyin || ''}
-                    onChange={(e) => {
-                      const newParagraphs = [...paragraphs];
-                      newParagraphs[index].pinyin = e.target.value;
-                      updateParagraphs(newParagraphs);
-                    }}
-                    placeholder="wǒ jīntiān hěn máng..."
-                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    💡 Separate words with commas: <code className="bg-muted px-1 rounded">你好,！,我,是,老师,。</code> — Pinyin auto-fills from vocabulary DB
+                  </p>
                 </div>
 
                 <div className="space-y-1">

@@ -16,6 +16,7 @@ export interface LessonPreview {
   status?: string;
   vocabCount?: number;
   contentHash?: string;
+  updatedAt?: string;
 }
 
 export interface VocabPreview {
@@ -43,6 +44,7 @@ export interface PreviewReleaseResponse {
     updatedLessons: LessonPreview[];
     unchangedLessons: LessonPreview[];
     stayingLessons: LessonPreview[];
+    liveLessonsWithChanges?: LessonPreview[];
   };
   vocabulary: {
     total: number;
@@ -63,6 +65,7 @@ export interface PreviewReleaseResponse {
     totalUpdated: number;
     totalStaying: number;
     totalLive?: number;
+    totalLiveWithChanges?: number;
   };
 }
 

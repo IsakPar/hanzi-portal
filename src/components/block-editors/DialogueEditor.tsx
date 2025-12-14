@@ -96,13 +96,13 @@ export function DialogueEditor({ block, onChange, lessonId }: DialogueEditorProp
                     />
                   </div>
                   <div className="col-span-3">
-                    <Label className="text-xs text-muted-foreground mb-1 block">Chinese Text</Label>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Chinese Text (comma-delimited)</Label>
                     <div className="flex gap-2 items-center">
                       <Input
                         value={exchange.text || exchange.hanzi || ''}
                         onChange={(e) => updateExchange(index, 'text', e.target.value)}
-                        placeholder="你好！"
-                        className="flex-1"
+                        placeholder="你好,！,我,是,老师,。"
+                        className="flex-1 font-mono"
                       />
                       <InlineAudioStatus
                         text={exchange.text || exchange.hanzi || ''}
@@ -114,26 +114,19 @@ export function DialogueEditor({ block, onChange, lessonId }: DialogueEditorProp
                         disabled={!lessonId}
                       />
                     </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      💡 Separate words with commas — Pinyin auto-fills from vocabulary DB
+                    </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1 block">Pinyin</Label>
-                    <Input
-                      value={exchange.pinyin || ''}
-                      onChange={(e) => updateExchange(index, 'pinyin', e.target.value)}
-                      placeholder="Nǐ hǎo!"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1 block">Translation</Label>
-                    <Input
-                      value={exchange.translation || ''}
-                      onChange={(e) => updateExchange(index, 'translation', e.target.value)}
-                      placeholder="Hello!"
-                    />
-                  </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Translation</Label>
+                  <Input
+                    value={exchange.translation || ''}
+                    onChange={(e) => updateExchange(index, 'translation', e.target.value)}
+                    placeholder="Hello! I am a teacher."
+                  />
                 </div>
               </div>
             </div>

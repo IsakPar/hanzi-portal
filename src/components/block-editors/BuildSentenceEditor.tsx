@@ -1,19 +1,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * BuildSentenceEditor - Edit build sentence exercise properties
+ * BuildSentenceEditor - Intuitive fill-in-the-blank exercise editor
+ * 
+ * User types a sentence with ___ to mark blanks:
+ * - "她是___" (blank at end)
+ * - "___是老师" (blank at start)
+ * - "我___很高兴" (blank in middle)
+ * - "___是___" (multiple blanks)
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FormField } from '../shared/FormField';
 import type { ExerciseBuildSentenceBlock } from '@/types/lesson';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Eye } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 import { AISuggestButton } from '@/components/ai/AISuggestButton';
 import type { Suggestion } from '@/services/aiSuggestAPI';
 import type { LessonWord } from '@/lib/extractLessonVocab';
-import { cn } from '@/lib/utils';
 import { RubyText } from '@/components/ui/RubyText';
 
 interface BuildSentenceEditorProps {
@@ -24,129 +29,175 @@ interface BuildSentenceEditorProps {
   lessonWords?: LessonWord[];
 }
 
-export function BuildSentenceEditor({ block, onChange, lessonId = '', hskLevel = 1, lessonWords: _lessonWords = [] }: BuildSentenceEditorProps) {
-  const [slots, setSlots] = useState(block.content.slots || [{ content: null, isFixed: false }]);
-  const [phrasePool, setPhrasePool] = useState<string[]>(block.content.phrasePool || []);
+// Parse sentence with ___ markers into slots structure
+function parseSentenceToSlots(sentence: string): Array<{ content: string | null; isFixed: boolean }> {
+  if (!sentence) return [];
   
-  const updateContent = (field: string, value: any) => {
+  const slots: Array<{ content: string | null; isFixed: boolean }> = [];
+  const parts = sentence.split('___');
+  
+  parts.forEach((part, index) => {
+    // Add the fixed content (if any)
+    if (part.trim()) {
+      slots.push({ content: part.trim(), isFixed: true });
+    }
+    // Add blank slot between parts (not after last)
+    if (index < parts.length - 1) {
+      slots.push({ content: null, isFixed: false });
+    }
+  });
+  
+  return slots;
+}
+
+// Convert slots back to sentence string with ___
+function slotsToSentence(slots: Array<{ content: string | null; isFixed: boolean }>): string {
+  return slots.map(slot => slot.isFixed ? slot.content : '___').join('');
+}
+
+// Count blanks in sentence
+function countBlanks(sentence: string): number {
+  return (sentence.match(/___/g) || []).length;
+}
+
+export function BuildSentenceEditor({ block, onChange, lessonId = '', hskLevel = 1, lessonWords: _lessonWords = [] }: BuildSentenceEditorProps) {
+  // Derive sentence from existing slots or use empty
+  const initialSentence = useMemo(() => {
+    if (block.content.sentence) return block.content.sentence;
+    if (block.content.slots?.length) return slotsToSentence(block.content.slots);
+    return '';
+  }, []);
+  
+  const [sentence, setSentence] = useState(initialSentence);
+  const [correctAnswer, setCorrectAnswer] = useState(block.content.correctAnswer || '');
+  const [distractors, setDistractors] = useState<string[]>(
+    block.content.distractors || 
+    (block.content.phrasePool?.filter((p: string) => p !== block.content.correctAnswer) || [])
+  );
+  
+  const blankCount = countBlanks(sentence);
+  
+  // Update parent whenever values change
+  useEffect(() => {
+    const slots = parseSentenceToSlots(sentence);
+    const phrasePool = correctAnswer ? [correctAnswer, ...distractors.filter(d => d)] : distractors.filter(d => d);
+    
+    // Build correct sentence by replacing blanks with correct answer
+    const correctSentence = sentence.replace(/___/g, correctAnswer || '___').split('').filter(c => c.trim()).join('');
+    
     onChange('content', {
       ...block.content,
-      [field]: value
+      sentence,
+      slots,
+      correctAnswer,
+      distractors: distractors.filter(d => d),
+      phrasePool,
+      correctSentence: correctSentence ? [correctSentence] : [],
     });
-  };
-
-  const updateSlots = (newSlots: any[]) => {
-    setSlots(newSlots);
-    updateContent('slots', newSlots);
+  }, [sentence, correctAnswer, distractors]);
+  
+  const addDistractor = () => {
+    setDistractors([...distractors, '']);
   };
   
-  const updatePhrasePool = (newPool: string[]) => {
-    setPhrasePool(newPool);
-    updateContent('phrasePool', newPool);
+  const updateDistractor = (index: number, value: string) => {
+    const newDistractors = [...distractors];
+    newDistractors[index] = value;
+    setDistractors(newDistractors);
+  };
+  
+  const removeDistractor = (index: number) => {
+    setDistractors(distractors.filter((_, i) => i !== index));
   };
   
   return (
     <div className="space-y-6">
-      <FormField
-        label="Instruction"
-        required
-        value={block.content.instruction || ''}
-        onChange={(value) => updateContent('instruction', value)}
-        placeholder="Put the parts in the correct order"
-      />
-      
-      {/* Slots */}
+      {/* Sentence with blank */}
       <div className="space-y-2">
         <Label>
-          Sentence Slots <span className="text-destructive">*</span>
+          Sentence with Blank <span className="text-destructive">*</span>
         </Label>
+        <Input
+          value={sentence}
+          onChange={(e) => setSentence(e.target.value)}
+          placeholder="她是___"
+          className="font-medium text-lg"
+        />
         <p className="text-xs text-muted-foreground">
-          Define the sentence structure with fixed and empty slots
+          Use <code className="bg-muted px-1 py-0.5 rounded font-mono">___</code> (three underscores) to mark where the blank goes. 
+          You can place it anywhere: <code className="bg-muted px-1 py-0.5 rounded">___是老师</code>, <code className="bg-muted px-1 py-0.5 rounded">她___老师</code>, <code className="bg-muted px-1 py-0.5 rounded">她是___</code>
         </p>
         
-        <div className="space-y-3">
-          {slots.map((slot: any, index: number) => (
-            <div key={index} className="flex gap-2 items-start p-4 border rounded-md bg-muted/30 relative group">
-              <div className="flex-1 space-y-3">
-                <div className="flex gap-2 items-center">
-                  <span className="bg-muted font-mono text-xs px-2 py-1 rounded text-muted-foreground">
-                    Slot {index + 1}
-                  </span>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={slot.isFixed}
-                      onChange={(e) => {
-                        const newSlots = [...slots];
-                        newSlots[index] = { ...newSlots[index], isFixed: e.target.checked };
-                        updateSlots(newSlots);
-                      }}
-                      className="rounded border-input"
-                    />
-                    Fixed Content (Pre-filled)
-                  </label>
-                </div>
-
-                <Input
-                  value={slot.content || ''}
-                  onChange={(e) => {
-                    const newSlots = [...slots];
-                    newSlots[index] = { ...newSlots[index], content: e.target.value || null };
-                    updateSlots(newSlots);
-                  }}
-                  placeholder={slot.isFixed ? "Fixed word (e.g., 我)" : "Leave empty for user to fill"}
-                  className={cn(
-                    slot.isFixed ? "bg-primary/5 border-primary/20" : "bg-background"
-                  )}
-                />
-              </div>
-              
-              <button
-                onClick={() => updateSlots(slots.filter((_, i) => i !== index))}
-                className="p-2 hover:bg-destructive/10 text-destructive rounded-md transition-colors mt-8"
-                title="Remove slot"
-              >
-                <Trash2 size={18} />
-              </button>
+        {/* Preview */}
+        {sentence && (
+          <div className="mt-3 p-4 bg-muted/50 rounded-lg border">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+              <Eye size={14} />
+              <span>Preview</span>
             </div>
-          ))}
-          
-          <button
-            onClick={() => updateSlots([...slots, { content: null, isFixed: false }])}
-            className="flex items-center justify-center gap-2 w-full p-2 border border-dashed rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-sm"
-          >
-            <Plus size={14} />
-            Add Slot
-          </button>
-        </div>
+            <div className="flex items-center gap-2 text-2xl font-medium">
+              {sentence.split('___').map((part, index, arr) => (
+                <span key={index} className="flex items-center gap-2">
+                  {part && <RubyText text={part} size="lg" />}
+                  {index < arr.length - 1 && (
+                    <span className="inline-block min-w-[60px] h-10 border-b-2 border-dashed border-primary/50 bg-primary/5 rounded px-2 text-center text-primary/70">
+                      {correctAnswer || '?'}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       
-      {/* Correct Sentence */}
-      <FormField
-        label="Correct Sentence (comma-separated)"
-        required
-        value={(block.content.correctSentence || []).join(', ')}
-        onChange={(value) => updateContent('correctSentence', value.split(',').map((s: string) => s.trim()))}
-        placeholder="我, 有, 两个, 哥哥, 。"
-        helpText="The complete correct sentence in order"
-      />
+      {/* Correct Answer */}
+      <div className="space-y-2">
+        <Label>
+          Correct Answer <span className="text-destructive">*</span>
+        </Label>
+        <div className="flex gap-2 items-center">
+          <Input
+            value={correctAnswer}
+            onChange={(e) => setCorrectAnswer(e.target.value)}
+            placeholder="老师"
+            className="flex-1 font-medium"
+          />
+          {correctAnswer && (
+            <RubyText text={correctAnswer} size="sm" className="text-green-600 min-w-[50px]" />
+          )}
+          <InlineAudioStatus
+            text={correctAnswer}
+            audioUrl={undefined}
+            lessonId={lessonId || 'draft'}
+            blockId={block.id}
+            optionId="correct"
+            onAudioSaved={() => {}}
+            disabled={!lessonId || !correctAnswer}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The word that correctly fills the blank
+          {blankCount > 1 && (
+            <span className="text-amber-600"> (Note: {blankCount} blanks detected - same answer fills all)</span>
+          )}
+        </p>
+      </div>
       
-      {/* Phrase Pool */}
+      {/* Distractors */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label>
-            Phrase Pool <span className="text-destructive">*</span>
-          </Label>
-          {phrasePool.length > 0 && (
+          <Label>Distractor Options</Label>
+          {correctAnswer && (
             <AISuggestButton
               context="distractor-word"
-              correctAnswer={phrasePool[0] || ''}
+              correctAnswer={correctAnswer}
               hskLevel={hskLevel}
-              exclude={phrasePool}
+              exclude={[correctAnswer, ...distractors]}
               count={5}
               onSelect={(suggestion: Suggestion) => {
-                if (!phrasePool.includes(suggestion.text)) {
-                  updatePhrasePool([...phrasePool, suggestion.text]);
+                if (!distractors.includes(suggestion.text)) {
+                  setDistractors([...distractors, suggestion.text]);
                 }
               }}
               size="md"
@@ -154,37 +205,32 @@ export function BuildSentenceEditor({ block, onChange, lessonId = '', hskLevel =
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Available phrases. Click ✨ for AI-suggested distractors.
+          Wrong options to make it challenging. Click ✨ for AI-suggested distractors.
         </p>
         
         <div className="space-y-2">
-          {phrasePool.map((phrase, index) => (
+          {distractors.map((distractor, index) => (
             <div key={index} className="flex gap-2 items-center">
               <Input
-                value={phrase}
-                onChange={(e) => {
-                  const newPool = [...phrasePool];
-                  newPool[index] = e.target.value;
-                  updatePhrasePool(newPool);
-                }}
-                placeholder={`Phrase ${index + 1}`}
+                value={distractor}
+                onChange={(e) => updateDistractor(index, e.target.value)}
+                placeholder={`Wrong option ${index + 1}`}
                 className="flex-1"
               />
-              {/* Pinyin display */}
-              {phrase && (
-                <RubyText text={phrase} size="sm" className="min-w-[50px] text-purple-600" />
+              {distractor && (
+                <RubyText text={distractor} size="sm" className="text-muted-foreground min-w-[50px]" />
               )}
               <InlineAudioStatus
-                text={phrase}
+                text={distractor}
                 audioUrl={undefined}
                 lessonId={lessonId || 'draft'}
                 blockId={block.id}
-                optionId={`phrase-${index}`}
+                optionId={`distractor-${index}`}
                 onAudioSaved={() => {}}
-                disabled={!lessonId}
+                disabled={!lessonId || !distractor}
               />
               <button
-                onClick={() => updatePhrasePool(phrasePool.filter((_, i) => i !== index))}
+                onClick={() => removeDistractor(index)}
                 className="p-2 hover:bg-destructive/10 text-destructive rounded-md transition-colors"
               >
                 <Trash2 size={18} />
@@ -193,27 +239,30 @@ export function BuildSentenceEditor({ block, onChange, lessonId = '', hskLevel =
           ))}
           
           <button
-            onClick={() => updatePhrasePool([...phrasePool, ''])}
+            onClick={addDistractor}
             className="flex items-center justify-center gap-2 w-full p-2 border border-dashed rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-sm"
           >
             <Plus size={14} />
-            Add Phrase
+            Add Distractor
           </button>
         </div>
       </div>
       
+      {/* English Hint */}
       <FormField
-        label="Hint"
-        value={block.content.hint || ''}
-        onChange={(value) => updateContent('hint', value)}
-        placeholder="I have two older brothers."
+        label="English Hint"
+        value={block.content.instruction || ''}
+        onChange={(value) => onChange('content', { ...block.content, instruction: value })}
+        placeholder="She is a ___"
+        helpText="The English translation with blank to help the user"
       />
       
+      {/* Explanation */}
       <FormField
-        label="Explanation"
+        label="Explanation (shown after answer)"
         value={block.content.explanation || ''}
-        onChange={(value) => updateContent('explanation', value)}
-        placeholder="In Chinese, quantity + measure word comes before the noun..."
+        onChange={(value) => onChange('content', { ...block.content, explanation: value })}
+        placeholder="她是老师 = She is a teacher"
         multiline
       />
     </div>
