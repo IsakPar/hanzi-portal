@@ -4,11 +4,10 @@
  * 
  * Flow:
  * 1. previewLessonAudio() - Generate audio, returns base64 for preview
- * 2. saveLessonAudio() - Save approved base64 to R2 + extract MFCC features
+ * 2. saveLessonAudio() - Save approved base64 to R2 (backend extracts MFCC via TTS service)
  */
 
 import { api } from './api';
-import { extractMFCCFromBase64, type MFCCResult } from './mfccExtractor';
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -90,53 +89,16 @@ export async function saveLessonAudio(
   audioBase64: string,
   lessonId: string,
   blockId: string,
-  durationMs?: number,
-  skipMfcc: boolean = false
+  durationMs?: number
 ): Promise<SaveAudioResult> {
-  // Extract MFCC features from the audio (client-side)
-  // Use timeout to prevent hanging
-  let mfccData: MFCCResult | null = null;
+  console.log('[LessonAudio] Saving to R2 (MFCC extracted by backend)...');
   
-  if (!skipMfcc) {
-    try {
-      console.log('[LessonAudio] Extracting MFCC features...');
-      
-      // Wrap extraction with 5s timeout (should be < 1s normally)
-      const extractPromise = extractMFCCFromBase64(audioBase64);
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('MFCC extraction timeout (5s)')), 5000);
-      });
-      
-      mfccData = await Promise.race([extractPromise, timeoutPromise]);
-      console.log('[LessonAudio] MFCC extraction complete:', {
-        frames: mfccData.numFrames,
-        coeffs: mfccData.numCoeffs,
-        durationMs: mfccData.durationMs,
-      });
-    } catch (error) {
-      console.error('[LessonAudio] MFCC extraction failed:', error);
-      // Continue without MFCC - audio will still be saved
-    }
-  } else {
-    console.log('[LessonAudio] Skipping MFCC extraction (user requested)');
-  }
-  
-  console.log('[LessonAudio] Saving to R2...', mfccData ? 'with MFCC' : 'without MFCC');
-  
-  // Send to backend with MFCC data
+  // Send to backend - it will extract MFCC via TTS service
   return api.post<SaveAudioResult>('/v1/speech/save-for-lesson', {
     audioBase64,
     lessonId,
     blockId,
     durationMs,
-    mfccData: mfccData ? {
-      coefficients: mfccData.coefficients,
-      sampleRate: mfccData.sampleRate,
-      hopMs: mfccData.hopMs,
-      numCoeffs: mfccData.numCoeffs,
-      durationMs: mfccData.durationMs,
-      numFrames: mfccData.numFrames,
-    } : undefined,
   });
 }
 

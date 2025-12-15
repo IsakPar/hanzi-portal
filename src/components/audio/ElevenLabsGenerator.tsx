@@ -77,7 +77,6 @@ export function ElevenLabsGenerator({
   const [isSaving, setIsSaving] = useState(false);
   const [isPlayingSaved, setIsPlayingSaved] = useState(false);
   const [justSavedUrl, setJustSavedUrl] = useState<string | null>(null); // Track URL we just saved
-  const [saveCancelled, setSaveCancelled] = useState(false);
   
   // Ref for saved audio playback
   const savedAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -124,33 +123,19 @@ export function ElevenLabsGenerator({
    * Handle approval from preview player
    */
   const handleApprove = async (audioBase64: string, selectedSpeed: number) => {
-    setSaveCancelled(false);
-    
     try {
       setIsSaving(true);
       
-      // If speed is not 1.0, process the audio client-side
       // NOTE: We save the ORIGINAL audio without speed processing
       // Speed processing causes pitch shift and quality loss
-      // The playback speed will be applied during real-time playback
-      const finalBase64 = audioBase64;
+      console.log('[ElevenLabs] Saving audio, intended speed:', selectedSpeed);
       
-      // TODO: In future, store selectedSpeed as metadata
-      console.log('[ElevenLabs] Saving original audio, intended speed:', selectedSpeed);
-      
-      // Save to R2 with MFCC extraction
+      // Save to R2 - backend extracts MFCC via TTS service
       const result = await saveLessonAudio(
-        finalBase64, 
+        audioBase64, 
         lessonId, 
-        blockId,
-        undefined // duration - will be detected from audio
+        blockId
       );
-      
-      // Check if cancelled while saving
-      if (saveCancelled) {
-        console.log('[ElevenLabs] Save was cancelled');
-        return;
-      }
       
       // Store the URL locally so we can display it while waiting for parent to update
       setJustSavedUrl(result.audioUrl);
@@ -161,27 +146,15 @@ export function ElevenLabsGenerator({
       
       // Show confirmation with MFCC status
       if (result.mfccExtracted) {
-        toast.success('Audio saved with MFCC!', 'Speech comparison features extracted');
+        toast.success('Audio saved with MFCC!', 'Speech comparison ready');
       } else {
-        toast.success('Audio saved!', 'Ready for students');
+        toast.success('Audio saved!', 'Ready for students (no MFCC)');
       }
     } catch (err) {
-      if (!saveCancelled) {
-        toast.error('Save failed', (err as Error).message || 'Please try again');
-      }
+      toast.error('Save failed', (err as Error).message || 'Please try again');
     } finally {
       setIsSaving(false);
     }
-  };
-
-  /**
-   * Cancel ongoing save
-   */
-  const handleCancelSave = () => {
-    console.log('[ElevenLabs] Cancelling save...');
-    setSaveCancelled(true);
-    setIsSaving(false);
-    toast.info('Save cancelled', 'Audio was not saved');
   };
 
   /**
@@ -274,7 +247,6 @@ export function ElevenLabsGenerator({
             onApprove={handleApprove}
             onDiscard={handleDiscard}
             onRegenerate={handleGenerate}
-            onCancelSave={handleCancelSave}
             isRegenerating={isGenerating}
             isSaving={isSaving}
           />
