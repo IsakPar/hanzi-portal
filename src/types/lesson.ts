@@ -248,6 +248,7 @@ export interface SpeechPracticeV2Block extends BaseBlock {
     // Audio
     audioUrl?: string;                 // ElevenLabs reference audio
     audioDurationMs?: number;          // Duration of audio in ms
+    mfccUrl?: string;                  // Pre-computed MFCC features for speech comparison
     
     // Segments for scoring (marked via waveform editor)
     segments: SpeechSegment[];

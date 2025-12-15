@@ -7,10 +7,11 @@
  * - Speed slider (0.5x - 1.0x)
  * - Approve (save) button
  * - Regenerate / Discard buttons
+ * - Cancel button during save
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { Play, Pause, RotateCcw, Check, X, Loader2 } from 'lucide-react';
+import { Play, Pause, RotateCcw, Check, X, Loader2, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
@@ -33,6 +34,9 @@ interface AudioPreviewPlayerProps {
   /** Called when user wants to regenerate */
   onRegenerate: () => void;
   
+  /** Called when user cancels save */
+  onCancelSave?: () => void;
+  
   /** Is currently regenerating */
   isRegenerating?: boolean;
   
@@ -49,6 +53,7 @@ export function AudioPreviewPlayer({
   onApprove,
   onDiscard,
   onRegenerate,
+  onCancelSave,
   isRegenerating = false,
   isSaving = false,
   className,
@@ -83,6 +88,14 @@ export function AudioPreviewPlayer({
   const handleApprove = () => {
     // Pass the original base64 - speed processing happens in the parent
     onApprove(audioBase64, speed);
+  };
+
+  const handleCancel = () => {
+    if (isSaving && onCancelSave) {
+      onCancelSave();
+    } else {
+      onDiscard();
+    }
   };
 
   const getSpeedLabel = () => {
@@ -132,14 +145,14 @@ export function AudioPreviewPlayer({
           )}
         </Button>
         
+        {/* Cancel/Discard - ALWAYS enabled */}
         <Button 
           size="sm" 
-          variant="ghost" 
-          onClick={onDiscard}
-          disabled={isDisabled}
-          title="Discard"
+          variant={isSaving ? "destructive" : "ghost"}
+          onClick={handleCancel}
+          title={isSaving ? "Cancel save" : "Discard"}
         >
-          <X className="w-4 h-4" />
+          {isSaving ? <Square className="w-4 h-4" /> : <X className="w-4 h-4" />}
         </Button>
       </div>
       
@@ -162,25 +175,35 @@ export function AudioPreviewPlayer({
         </span>
       </div>
       
-      {/* Approve button */}
-      <Button 
-        onClick={handleApprove} 
-        disabled={isDisabled} 
-        className="w-full bg-green-600 hover:bg-green-700 text-white"
-      >
-        {isSaving ? (
-          <>
+      {/* Approve button or Cancel during save */}
+      {isSaving ? (
+        <div className="flex gap-2">
+          <Button 
+            disabled
+            className="flex-1 bg-gray-400 text-white"
+          >
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            {speed !== 1.0 ? 'Processing & Saving...' : 'Saving...'}
-          </>
-        ) : (
-          <>
-            <Check className="w-4 h-4 mr-2" />
-            Save at {speed.toFixed(2)}x Speed
-          </>
-        )}
-      </Button>
+            Saving...
+          </Button>
+          <Button 
+            variant="destructive"
+            onClick={handleCancel}
+            className="px-4"
+          >
+            <Square className="w-4 h-4 mr-1" />
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <Button 
+          onClick={handleApprove} 
+          disabled={isRegenerating} 
+          className="w-full bg-green-600 hover:bg-green-700 text-white"
+        >
+          <Check className="w-4 h-4 mr-2" />
+          Save at {speed.toFixed(2)}x Speed
+        </Button>
+      )}
     </div>
   );
 }
-

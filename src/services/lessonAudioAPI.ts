@@ -4,10 +4,11 @@
  * 
  * Flow:
  * 1. previewLessonAudio() - Generate audio, returns base64 for preview
- * 2. saveLessonAudio() - Save approved base64 to R2
+ * 2. saveLessonAudio() - Save approved base64 to R2 + extract MFCC features
  */
 
 import { api } from './api';
+import { extractMFCCFromBase64, type MFCCResult } from './mfccExtractor';
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -33,6 +34,8 @@ export interface SaveAudioResult {
   r2Key: string;
   audioUrl: string;
   audioDurationMs?: number;
+  mfccUrl?: string;
+  mfccExtracted?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -75,20 +78,65 @@ export async function previewLessonAudio(
 }
 
 /**
- * Save approved audio to R2
- * Called after user approves preview (with optional speed processing)
+ * Save approved audio to R2 with MFCC feature extraction
+ * Called after user approves preview
+ * 
+ * Flow:
+ * 1. Extract MFCC features from audio (client-side)
+ * 2. Send audio + MFCC to backend
+ * 3. Backend saves both to R2
  */
 export async function saveLessonAudio(
   audioBase64: string,
   lessonId: string,
   blockId: string,
-  durationMs?: number
+  durationMs?: number,
+  skipMfcc: boolean = false
 ): Promise<SaveAudioResult> {
+  // Extract MFCC features from the audio (client-side)
+  // Use timeout to prevent hanging
+  let mfccData: MFCCResult | null = null;
+  
+  if (!skipMfcc) {
+    try {
+      console.log('[LessonAudio] Extracting MFCC features...');
+      
+      // Wrap extraction with 5s timeout (should be < 1s normally)
+      const extractPromise = extractMFCCFromBase64(audioBase64);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('MFCC extraction timeout (5s)')), 5000);
+      });
+      
+      mfccData = await Promise.race([extractPromise, timeoutPromise]);
+      console.log('[LessonAudio] MFCC extraction complete:', {
+        frames: mfccData.numFrames,
+        coeffs: mfccData.numCoeffs,
+        durationMs: mfccData.durationMs,
+      });
+    } catch (error) {
+      console.error('[LessonAudio] MFCC extraction failed:', error);
+      // Continue without MFCC - audio will still be saved
+    }
+  } else {
+    console.log('[LessonAudio] Skipping MFCC extraction (user requested)');
+  }
+  
+  console.log('[LessonAudio] Saving to R2...', mfccData ? 'with MFCC' : 'without MFCC');
+  
+  // Send to backend with MFCC data
   return api.post<SaveAudioResult>('/v1/speech/save-for-lesson', {
     audioBase64,
     lessonId,
     blockId,
     durationMs,
+    mfccData: mfccData ? {
+      coefficients: mfccData.coefficients,
+      sampleRate: mfccData.sampleRate,
+      hopMs: mfccData.hopMs,
+      numCoeffs: mfccData.numCoeffs,
+      durationMs: mfccData.durationMs,
+      numFrames: mfccData.numFrames,
+    } : undefined,
   });
 }
 
