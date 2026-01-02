@@ -5,7 +5,7 @@
  * - Dashboard showing audio coverage across content types
  * - Filter by content type, HSK level, audio status
  * - Bulk upload for vocabulary and sentences
- * - Export workflow for ElevenLabs portal
+ * - Export workflow for ElevenLabs portal (Phase 5)
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -21,6 +21,10 @@ import {
   ExternalLink,
   Search,
   Loader2,
+  FileText,
+  Copy,
+  Check,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,11 +39,229 @@ import { searchVocabulary, saveWordAudio, type VocabularyEntry, type VocabularyS
 
 type ContentType = 'vocabulary' | 'stories' | 'lessons';
 type AudioStatus = 'all' | 'missing' | 'has';
+type ExportFormat = 'text' | 'detailed' | 'json';
 
 interface AudioStats {
   vocabulary: { total: number; withAudio: number };
   stories: { total: number; withAudio: number };
   lessons: { total: number; withAudio: number };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORT MODAL COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ExportModalProps {
+  vocabulary: VocabularyEntry[];
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+function ExportModal({ vocabulary, isOpen, onClose }: ExportModalProps) {
+  const [format, setFormat] = useState<ExportFormat>('text');
+  const [batchSize, setBatchSize] = useState<number>(50);
+  const [currentBatch, setCurrentBatch] = useState(0);
+  const [copied, setCopied] = useState(false);
+
+  const missingAudio = vocabulary.filter(v => !v.wordAudioR2Key);
+  const totalBatches = Math.ceil(missingAudio.length / batchSize);
+  const currentItems = missingAudio.slice(currentBatch * batchSize, (currentBatch + 1) * batchSize);
+
+  const generateExport = useCallback(() => {
+    if (format === 'text') {
+      // Simple text - one word per line (for direct paste into ElevenLabs)
+      return currentItems.map(v => v.hanzi).join('\n');
+    } else if (format === 'detailed') {
+      // Detailed text with pinyin context (helps verify pronunciation)
+      return currentItems.map(v => 
+        `${v.hanzi} (${v.pinyin}) - ${v.english}`
+      ).join('\n');
+    } else {
+      // JSON format for reference
+      return JSON.stringify(currentItems.map(v => ({
+        id: v.id,
+        hanzi: v.hanzi,
+        pinyin: v.pinyin,
+        english: v.english,
+        hskLevel: v.hskLevel,
+      })), null, 2);
+    }
+  }, [format, currentItems]);
+
+  const exportContent = generateExport();
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(exportContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast.success('Copied!', `${currentItems.length} items ready to paste`);
+  };
+
+  const handleDownload = () => {
+    const ext = format === 'json' ? 'json' : 'txt';
+    const blob = new Blob([exportContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audio-export-batch${currentBatch + 1}-${new Date().toISOString().split('T')[0]}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Downloaded!', `Batch ${currentBatch + 1} of ${totalBatches}`);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Export for ElevenLabs</h2>
+            <p className="text-sm text-slate-600 mt-0.5">
+              {missingAudio.length} items need audio
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+
+        {/* Controls */}
+        <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Format selector */}
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-slate-600">Format:</Label>
+              <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+                {([
+                  { value: 'text', label: 'Simple' },
+                  { value: 'detailed', label: 'Detailed' },
+                  { value: 'json', label: 'JSON' },
+                ] as const).map(f => (
+                  <button
+                    key={f.value}
+                    onClick={() => setFormat(f.value)}
+                    className={cn(
+                      "px-3 py-1.5 text-sm transition-colors",
+                      format === f.value
+                        ? "bg-purple-600 text-white"
+                        : "bg-white text-slate-600 hover:bg-slate-50"
+                    )}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Batch size */}
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-slate-600">Batch:</Label>
+              <select
+                value={batchSize}
+                onChange={(e) => {
+                  setBatchSize(Number(e.target.value));
+                  setCurrentBatch(0);
+                }}
+                className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm"
+              >
+                <option value={25}>25 items</option>
+                <option value={50}>50 items</option>
+                <option value={100}>100 items</option>
+                <option value={missingAudio.length}>All ({missingAudio.length})</option>
+              </select>
+            </div>
+
+            {/* Batch navigation */}
+            {totalBatches > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentBatch(b => Math.max(0, b - 1))}
+                  disabled={currentBatch === 0}
+                  className="px-2 py-1 text-sm bg-white border border-slate-200 rounded disabled:opacity-50"
+                >
+                  ← Prev
+                </button>
+                <span className="text-sm text-slate-600">
+                  {currentBatch + 1} / {totalBatches}
+                </span>
+                <button
+                  onClick={() => setCurrentBatch(b => Math.min(totalBatches - 1, b + 1))}
+                  disabled={currentBatch === totalBatches - 1}
+                  className="px-2 py-1 text-sm bg-white border border-slate-200 rounded disabled:opacity-50"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Format descriptions */}
+          <div className="mt-3 text-xs text-slate-500">
+            {format === 'text' && (
+              <span>📋 <strong>Simple:</strong> Just Chinese characters - paste directly into ElevenLabs text field</span>
+            )}
+            {format === 'detailed' && (
+              <span>📖 <strong>Detailed:</strong> Characters + pinyin + meaning - for your reference when checking audio</span>
+            )}
+            {format === 'json' && (
+              <span>🔧 <strong>JSON:</strong> Structured data with IDs - for automation scripts</span>
+            )}
+          </div>
+        </div>
+
+        {/* Content preview */}
+        <div className="px-6 py-4 max-h-[300px] overflow-y-auto">
+          <pre className="bg-slate-900 text-slate-100 p-4 rounded-xl text-sm font-mono overflow-x-auto whitespace-pre-wrap">
+            {exportContent || 'No items to export'}
+          </pre>
+        </div>
+
+        {/* Actions */}
+        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50">
+          <div className="text-sm text-slate-600">
+            Showing {currentItems.length} of {missingAudio.length} items
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={handleDownload}>
+              <Download className="w-4 h-4 mr-1" />
+              Download
+            </Button>
+            <Button onClick={handleCopy} className="bg-purple-600 hover:bg-purple-700">
+              {copied ? (
+                <>
+                  <Check className="w-4 h-4 mr-1" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 mr-1" />
+                  Copy to Clipboard
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Workflow instructions */}
+        <div className="px-6 py-4 bg-purple-50 border-t border-purple-100">
+          <h4 className="text-sm font-medium text-purple-900 mb-2">📌 Quick Workflow</h4>
+          <ol className="text-xs text-purple-800 space-y-1 list-decimal list-inside">
+            <li>Copy the text above using the <strong>Copy</strong> button</li>
+            <li>Go to <a href="https://elevenlabs.io/app/speech-synthesis" target="_blank" rel="noopener" className="underline">ElevenLabs Speech Synthesis</a></li>
+            <li>Select <strong>Yolanda</strong> voice and <strong>eleven_multilingual_v2</strong> or <strong>v3 Alpha</strong> model</li>
+            <li>Paste the text, generate audio for each word</li>
+            <li>Download as MP3, naming files as <code className="bg-purple-100 px-1 rounded">你好.mp3</code></li>
+            <li>Return here and upload each file to match the word</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -214,6 +436,7 @@ export function AudioManager() {
   const [isLoading, setIsLoading] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [stats, setStats] = useState<AudioStats>({
     vocabulary: { total: 0, withAudio: 0 },
     stories: { total: 0, withAudio: 0 },
@@ -334,27 +557,15 @@ export function AudioManager() {
     }
   }, []);
 
-  // Export for ElevenLabs
-  const handleExport = useCallback(() => {
+  // Open export modal
+  const handleOpenExport = useCallback(() => {
     const missingAudio = vocabulary.filter(v => !v.wordAudioR2Key);
     if (missingAudio.length === 0) {
       toast.info('Nothing to export', 'All items have audio');
       return;
     }
-    
-    // Create text file with words
-    const content = missingAudio.map(v => v.hanzi).join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `audio-needed-${contentType}-${new Date().toISOString().split('T')[0]}.txt`;
-    a.click();
-    
-    URL.revokeObjectURL(url);
-    toast.success('Exported!', `${missingAudio.length} items ready for ElevenLabs`);
-  }, [vocabulary, contentType]);
+    setShowExportModal(true);
+  }, [vocabulary]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50 p-8">
@@ -491,10 +702,10 @@ export function AudioManager() {
                 <RefreshCw className={cn("w-4 h-4 mr-1", isLoading && "animate-spin")} />
                 Refresh
               </Button>
-              <Button variant="outline" onClick={handleExport}>
-                <Download className="w-4 h-4 mr-1" />
-                Export List
-              </Button>
+            <Button variant="outline" onClick={handleOpenExport}>
+              <FileText className="w-4 h-4 mr-1" />
+              Export for ElevenLabs
+            </Button>
             </div>
           </div>
         </div>
@@ -573,14 +784,22 @@ export function AudioManager() {
             💡 Recommended Workflow
           </h3>
           <ol className="text-sm text-purple-800 space-y-2 list-decimal list-inside">
-            <li>Click <strong>Export List</strong> to download words needing audio</li>
-            <li>Open <strong>ElevenLabs</strong> portal and paste the words</li>
-            <li>Generate audio using <strong>v3 Alpha</strong> model for best quality</li>
-            <li>Download each MP3 and name it with the Chinese character (e.g., <code>你好.mp3</code>)</li>
-            <li>Upload each MP3 here using the <strong>Upload</strong> button</li>
+            <li>Click <strong>Export for ElevenLabs</strong> to get words needing audio</li>
+            <li>Copy the text and open <a href="https://elevenlabs.io/app/speech-synthesis" target="_blank" rel="noopener noreferrer" className="underline text-purple-700">ElevenLabs Portal</a></li>
+            <li>Use <strong>Yolanda</strong> voice with <strong>v3 Alpha</strong> or <strong>eleven_multilingual_v2</strong> model</li>
+            <li>Generate audio word-by-word, download as MP3</li>
+            <li>Name files as the Chinese character (e.g., <code className="bg-purple-100 px-1 rounded">你.mp3</code>)</li>
+            <li>Upload each file here - they'll be matched automatically</li>
           </ol>
         </div>
       </div>
+
+      {/* Export Modal */}
+      <ExportModal
+        vocabulary={vocabulary}
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+      />
     </div>
   );
 }
