@@ -1,16 +1,17 @@
 /**
  * Audio Components
  * 
- * - AudioUploader: Manual MP3 file upload
- * - VoiceSelector: ElevenLabs voice dropdown
+ * - AudioUploader: Lesson block audio upload (for lesson editor)
+ * - SimpleAudioUploader: Simple drag-and-drop for vocabulary
+ * - VocabAudioUploader: Vocabulary word audio with lookup
+ * - SpeechAudioUploader: Speech practice block audio
  * - AudioPreviewPlayer: Preview playback with speed control
- * - ElevenLabsGenerator: Full generation flow (generate → preview → save)
- * - InlineAudioStatus: Compact audio indicator for inline use (MCQ options, etc.)
  */
 
 export { AudioUploader } from './AudioUploader';
-export { VoiceSelector } from './VoiceSelector';
+export { SimpleAudioUploader } from './SimpleAudioUploader';
+export { VocabAudioUploader } from './VocabAudioUploader';
+export { SpeechAudioUploader } from './SpeechAudioUploader';
 export { AudioPreviewPlayer } from './AudioPreviewPlayer';
-export { ElevenLabsGenerator } from './ElevenLabsGenerator';
 export { InlineAudioStatus } from './InlineAudioStatus';
 

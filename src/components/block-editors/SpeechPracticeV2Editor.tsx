@@ -13,7 +13,7 @@
 import { useState, useEffect } from 'react';
 import { FormField } from '../shared/FormField';
 import { applySandhiRules } from '../speech/SandhiDetector';
-import { ElevenLabsGenerator } from '../audio/ElevenLabsGenerator';
+import { SpeechAudioUploader } from '../audio/SpeechAudioUploader';
 import type { SpeechPracticeV2Block, SpeechSegment } from '@/types/lesson';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -315,7 +315,7 @@ export function SpeechPracticeV2Editor({ block, onChange, lessonId }: SpeechPrac
           )}
         </h4>
         
-        <ElevenLabsGenerator
+        <SpeechAudioUploader
           text={block.content.text || ''}
           label=""
           savedAudioUrl={block.content.audioUrl}

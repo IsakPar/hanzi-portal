@@ -32,6 +32,7 @@ const PromptsList = lazy(() => import("./pages/PromptsList").then(m => ({ defaul
 const VocabularyList = lazy(() => import("./pages/VocabularyList").then(m => ({ default: m.VocabularyList })));
 const VocabularyImport = lazy(() => import("./pages/VocabularyImport").then(m => ({ default: m.VocabularyImport })));
 const MetadataTaggingPage = lazy(() => import("./pages/MetadataTaggingPage").then(m => ({ default: m.MetadataTaggingPage })));
+const AudioManager = lazy(() => import("./pages/AudioManager").then(m => ({ default: m.AudioManager })));
 
 // Secondary pages (lazy loaded - less frequently accessed)
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard").then(m => ({ default: m.AnalyticsDashboard })));
@@ -119,6 +120,7 @@ function AppContent() {
           <Route path="vocabulary" element={<Suspense fallback={<PageLoader />}><VocabularyList /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="vocabulary/import" element={<Suspense fallback={<PageLoader />}><VocabularyImport /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="vocabulary/tagging" element={<Suspense fallback={<PageLoader />}><MetadataTaggingPage /></Suspense>} errorElement={<ErrorBoundary />} />
+          <Route path="audio" element={<Suspense fallback={<PageLoader />}><AudioManager /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="vocabulary/new" element={<Suspense fallback={<PageLoader />}><VocabularyEditor /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="vocabulary/:id/edit" element={<Suspense fallback={<PageLoader />}><VocabularyEditor /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="analytics" element={<Suspense fallback={<PageLoader />}><AnalyticsDashboard /></Suspense>} errorElement={<ErrorBoundary />} />

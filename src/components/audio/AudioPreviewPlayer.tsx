@@ -14,8 +14,15 @@ import { Play, Pause, RotateCcw, Check, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
-import { createAudioDataUrl, DEFAULT_SPEED } from '@/services/lessonAudioAPI';
 import { cn } from '@/lib/utils';
+
+// Default speed for playback
+const DEFAULT_SPEED = 0.7;
+
+// Create audio data URL from base64
+function createAudioDataUrl(base64: string): string {
+  return `data:audio/mpeg;base64,${base64}`;
+}
 
 interface AudioPreviewPlayerProps {
   /** Base64 audio data (not yet saved) */

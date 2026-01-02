@@ -7,7 +7,7 @@
  */
 
 import { FormField } from '../shared/FormField';
-import { VocabAudioGenerator } from '../audio/VocabAudioGenerator';
+import { VocabAudioUploader } from '../audio/VocabAudioUploader';
 import type { HeroHanziBlock } from '@/types/lesson';
 
 interface HeroHanziEditorProps {
@@ -51,7 +51,7 @@ export function HeroHanziEditor({ block, onChange }: HeroHanziEditorProps) {
       
       {/* AUDIO - Saves to VOCABULARY (single source of truth) */}
       {block.content.hanzi && (
-        <VocabAudioGenerator
+        <VocabAudioUploader
           hanzi={block.content.hanzi}
           label="Word Audio"
         />
