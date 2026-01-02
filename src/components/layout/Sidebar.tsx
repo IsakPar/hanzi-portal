@@ -1,4 +1,4 @@
-import { LayoutDashboard, BookOpen, PenTool, BarChart3, Settings, LogOut, BookText, Wand2, Users, Webhook, Database, Shield, Package, Gauge, Sliders, CreditCard, Activity } from "lucide-react";
+import { LayoutDashboard, BookOpen, PenTool, BarChart3, Settings, LogOut, BookText, Wand2, Users, Webhook, Database, Shield, Package, Gauge, Sliders, CreditCard, Activity, Volume2 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ const contentItems = [
   { icon: BookText, label: "Stories", href: "/stories", color: "text-slate-600" },
   { icon: Wand2, label: "AI Prompts", href: "/prompts", color: "text-slate-600" },
   { icon: PenTool, label: "Vocabulary", href: "/vocabulary", color: "text-slate-600" },
+  { icon: Volume2, label: "Audio Manager", href: "/audio", color: "text-purple-600" },
   { icon: BarChart3, label: "Analytics", href: "/analytics", color: "text-slate-600" },
 ];
 
