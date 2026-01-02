@@ -14,6 +14,7 @@ export interface Story {
   difficulty: 'easy' | 'medium' | 'hard';
   estimatedMinutes?: number;
   coverImageR2Key?: string;
+  storyType?: 'text' | 'dialogue'; // 'text' for narration, 'dialogue' for conversations
   practiceBlocks?: ContentBlock[];
   // Series relationship
   seriesId?: string | null;
@@ -33,6 +34,7 @@ export interface StorySentence {
   chinese: string;
   pinyin: string;
   english: string;
+  speaker?: string | null; // For dialogue stories
   audioR2Key?: string;
   audioUrl?: string | null; // For frontend display
   audioDurationMs?: number;
@@ -44,6 +46,7 @@ export interface BulkSegment {
   chinese: string;
   pinyin: string;
   english: string;
+  speaker?: string | null;
   audioR2Key?: string;
   audioDurationMs?: number;
 }
@@ -254,6 +257,19 @@ export async function uploadSentenceAudio(storyId: string, sentenceId: string, f
   return data.r2Key;
 }
 
+export async function deleteSentenceAudio(storyId: string, sentenceId: string): Promise<void> {
+  const token = getAccessToken();
+  const headers: HeadersInit = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/v1/stories/${storyId}/sentences/${sentenceId}/audio`, {
+    method: 'DELETE',
+    headers,
+  });
+
+  if (!response.ok) throw new Error('Delete failed');
+}
+
 // ═══════════════════════════════════════════════════════════
 // JSON IMPORT/EXPORT
 // ═══════════════════════════════════════════════════════════
@@ -272,6 +288,7 @@ export interface StoryTemplate {
     chinese: string;
     pinyin: string;
     english: string;
+    speaker?: string;
   }>;
   practiceBlocks: Array<Record<string, unknown>>;
 }
@@ -372,6 +389,51 @@ export interface CreateSeriesInput {
   icon?: string;
   hskLevel?: number;
   isPublished?: boolean;
+  accessTier?: 'free' | 'premium';
+  tags?: string[];
+  metadata?: {
+    titleEn?: string;
+    characters?: Array<{
+      name: string;
+      pinyin?: string;
+      role?: string;
+      traits?: string[];
+    }>;
+    parts?: Array<{
+      order: number;
+      file?: string;
+      title: string;
+      titleEn?: string;
+    }>;
+    [key: string]: unknown;
+  };
+}
+
+// Type for importing series from content-planner JSON
+export interface SeriesImportData {
+  seriesId?: string;
+  title: string;
+  titleEn?: string;
+  description?: string;
+  author?: string;
+  hskLevel?: number;
+  difficulty?: string;
+  totalParts?: number;
+  estimatedTotalMinutes?: number;
+  accessTier?: 'free' | 'premium';
+  tags?: string[];
+  characters?: Array<{
+    name: string;
+    pinyin?: string;
+    role?: string;
+    traits?: string[];
+  }>;
+  parts?: Array<{
+    order: number;
+    file?: string;
+    title: string;
+    titleEn?: string;
+  }>;
 }
 
 /**

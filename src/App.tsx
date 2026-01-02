@@ -20,7 +20,7 @@ import { Dashboard } from "./pages/Dashboard";
 const LessonEditor = lazy(() => import("./pages/LessonEditor").then(m => ({ default: m.LessonEditor })));
 const LessonReview = lazy(() => import("./pages/LessonReview"));
 const LessonReviewPage = lazy(() => import("./pages/LessonReviewPage").then(m => ({ default: m.LessonReviewPage })));
-const StoryEditor = lazy(() => import("./pages/StoryEditor").then(m => ({ default: m.StoryEditor })));
+const StoryEditor = lazy(() => import("./pages/StoryEditorV2").then(m => ({ default: m.StoryEditorV2 })));
 const VocabularyEditor = lazy(() => import("./pages/VocabularyEditor").then(m => ({ default: m.VocabularyEditor })));
 const PromptEditor = lazy(() => import("./pages/PromptEditor").then(m => ({ default: m.PromptEditor })));
 const PipelineEditor = lazy(() => import("./pages/PipelineEditor").then(m => ({ default: m.PipelineEditor })));

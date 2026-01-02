@@ -1,14 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from "react";
 import type { StoryWithDetails, StorySeries } from "@/services/storiesAPI";
-import { getStorySeries } from "@/services/storiesAPI";
+import { getStorySeries, uploadCover } from "@/services/storiesAPI";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Sparkles, AlertCircle, Library } from "lucide-react";
+import { Sparkles, AlertCircle, Library, Image } from "lucide-react";
 import { splitIntoSegments, estimateSegmentCount } from "@/utils/textSplitter";
 import { hanziToPinyin } from "@/services/chineseNLP";
+import { ThumbnailUploader } from "@/components/stories/ThumbnailUploader";
+import { toast } from "@/hooks/useToast";
 
 interface StoryInfoTabProps {
   story: StoryWithDetails;
@@ -112,6 +114,43 @@ export function StoryInfoTab({ story, onChange, onGenerateSegments }: StoryInfoT
           </div>
         </div>
       </div>
+
+      {/* Cover Image */}
+      {story.id !== 'new' && (
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-4">
+            <Image className="w-5 h-5 text-purple-600" />
+            <h2 className="text-xl font-bold text-gray-800">Cover Image</h2>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Upload a cover image for the story (shown in mobile app).
+          </p>
+          
+          <div className="flex items-start gap-6">
+            <ThumbnailUploader
+              currentR2Key={story.coverImageR2Key}
+              fallbackColor="#8B5CF6"
+              onUpload={async (file) => {
+                const r2Key = await uploadCover(story.id, file);
+                handleChange('coverImageR2Key', r2Key);
+                toast.success('Cover uploaded!');
+                return r2Key;
+              }}
+              onDelete={async () => {
+                handleChange('coverImageR2Key', null);
+                toast.success('Cover removed');
+              }}
+              size="lg"
+            />
+            <div className="text-sm text-gray-500 space-y-1">
+              <p>• PNG, JPEG, or WebP</p>
+              <p>• Max 5MB</p>
+              <p>• Square recommended (1:1)</p>
+              <p className="text-gray-400 mt-2">Save the story first before uploading</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Classification */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">

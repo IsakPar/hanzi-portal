@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Eye, Trash2, PlayCircle } from "lucide-react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { ArrowLeft, Save, Eye, Trash2, PlayCircle, Download } from "lucide-react";
 import type { StoryWithDetails } from "@/services/storiesAPI";
-import { getStory, createStory, updateStory, deleteStory } from "@/services/storiesAPI";
+import { getStory, createStory, updateStory, deleteStory, exportStory, bulkSaveSegments } from "@/services/storiesAPI";
+import type { StoryImportData } from "@/components/stories-list/StoryImportModal";
 import { StoryInfoTab } from "@/components/story-editor/StoryInfoTab";
 import { StorySentencesTab } from "@/components/story-editor/StorySentencesTab";
 import { StoryVocabularyTab } from "@/components/story-editor/StoryVocabularyTab";
@@ -20,9 +21,13 @@ type Tab = 'info' | 'sentences' | 'vocabulary' | 'practice';
 export function StoryEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const confirm = useGlobalConfirm();
   const { getSignal } = useAbortController();
   const isNew = id === 'new';
+  
+  // Check for imported data from JSON import workflow
+  const importedData = (location.state as { importedStory?: StoryImportData } | null)?.importedStory;
 
   const [story, setStory] = useState<StoryWithDetails | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('info');
@@ -44,8 +49,46 @@ export function StoryEditor() {
   useEffect(() => {
     if (!isNew && id) {
       loadStory();
+    } else if (importedData) {
+      // Initialize from imported JSON data
+      setStory({
+        id: 'new',
+        title: importedData.title,
+        subtitle: importedData.titleEn || importedData.subtitle,
+        author: importedData.author,
+        description: importedData.description,
+        topic: importedData.topic,
+        hskLevel: importedData.hskLevel,
+        difficulty: importedData.difficulty || 'medium',
+        storyType: importedData.storyType,
+        estimatedMinutes: importedData.estimatedMinutes,
+        accessTier: importedData.accessTier,
+        seriesId: importedData.seriesId,
+        seriesOrder: importedData.seriesOrder,
+        isPublished: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        // Convert imported sentences to the editor format
+        sentences: importedData.sentences.map((s, idx) => ({
+          id: `temp-${idx}`,
+          storyId: 'new',
+          orderIndex: idx,
+          chinese: s.chinese,
+          pinyin: s.pinyin,
+          english: s.english,
+          speaker: s.speaker || null,
+          audioUrl: null,
+          createdAt: new Date(),
+        })),
+        vocabulary: [],
+        questions: [],
+        // Include practice blocks if provided
+        practiceBlocks: importedData.practiceBlocks || [],
+      } as any);
+      setIsDirty(true); // Mark as dirty since it needs saving
+      toast.success('Story imported!', `Loaded "${importedData.title}" with ${importedData.sentences.length} sentences. Add TTS and save when ready.`);
     } else {
-      // Initialize new story
+      // Initialize empty new story
       setStory({
         id: 'new',
         title: '',
@@ -84,6 +127,7 @@ export function StoryEditor() {
     setSaving(true);
     try {
       if (isNew) {
+        // Create the story first
         const newStory = await createStory({
           title: story.title,
           subtitle: story.subtitle,
@@ -95,6 +139,19 @@ export function StoryEditor() {
           estimatedMinutes: story.estimatedMinutes,
           practiceBlocks: story.practiceBlocks,
         });
+        
+        // If we have sentences (from import), save them too
+        if (story.sentences && story.sentences.length > 0) {
+          await bulkSaveSegments(newStory.id, story.sentences.map((s) => ({
+            chinese: s.chinese,
+            pinyin: s.pinyin,
+            english: s.english,
+            speaker: s.speaker || undefined,
+            audioR2Key: s.audioR2Key,
+          })));
+        }
+        
+        toast.success('Story created!', `"${story.title}" with ${story.sentences?.length || 0} sentences saved.`);
         navigate(`/stories/${newStory.id}/edit`, { replace: true });
       } else {
         await updateStory(story.id, {
@@ -109,9 +166,9 @@ export function StoryEditor() {
           isPublished: story.isPublished,
           practiceBlocks: story.practiceBlocks,
         });
+        toast.success('Story saved!', 'Your changes have been saved successfully');
       }
       setIsDirty(false);
-      toast.success('Story saved!', 'Your changes have been saved successfully');
     } catch (error) {
       logger.error('Failed to save story:', error);
       toast.error('Save failed', 'Could not save story. Please try again.');
@@ -199,6 +256,36 @@ export function StoryEditor() {
             >
               <Trash2 size={16} />
               Delete
+            </button>
+          )}
+          {/* Export Button */}
+          {!isNew && (
+            <button
+              onClick={async () => {
+                try {
+                  const data = await exportStory(story.id);
+                  // Rename segments to sentences for content-planner format
+                  const exportData = {
+                    ...data,
+                    sentences: data.segments,
+                    segments: undefined,
+                  };
+                  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${story.title.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '-')}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success('Story exported!');
+                } catch (err) {
+                  toast.error('Export failed');
+                }
+              }}
+              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-2"
+            >
+              <Download size={16} />
+              Export
             </button>
           )}
           {/* Preview Button */}

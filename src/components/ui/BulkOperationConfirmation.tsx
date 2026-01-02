@@ -4,7 +4,7 @@
  * Shows cost estimate and confirmation before starting bulk operations
  */
 
-import { Volume2, MessageSquare, Tag, Zap, DollarSign } from 'lucide-react';
+import { MessageSquare, Tag, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { BulkOperationType, CostEstimate, VocabItem } from '@/hooks/useBulkOperations';
 
@@ -23,15 +23,9 @@ const operationInfo: Record<BulkOperationType, {
   icon: React.ReactNode;
   color: string;
 }> = {
-  audio: { 
-    title: 'Generate Audio', 
-    description: 'Azure TTS at 1.0x speed for word pronunciation',
-    icon: <Volume2 className="w-6 h-6" />,
-    color: 'purple',
-  },
   example: { 
     title: 'Generate Examples', 
-    description: 'AI-powered example sentences with audio',
+    description: 'AI-powered example sentences',
     icon: <MessageSquare className="w-6 h-6" />,
     color: 'blue',
   },
@@ -40,12 +34,6 @@ const operationInfo: Record<BulkOperationType, {
     description: 'POS, tone patterns, and categories',
     icon: <Tag className="w-6 h-6" />,
     color: 'pink',
-  },
-  complete: { 
-    title: 'Complete All', 
-    description: 'Staged processing: Examples → Word Audio → Example Audio → Tags',
-    icon: <Zap className="w-6 h-6" />,
-    color: 'emerald',
   },
 };
 
@@ -104,16 +92,6 @@ export function BulkOperationConfirmation({
               </div>
             )}
             
-            {costEstimate.audioCount > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="flex items-center gap-2 text-gray-600">
-                  <Volume2 className="w-4 h-4 text-purple-500" />
-                  Audio files
-                </span>
-                <span className="font-medium">{costEstimate.audioCount}</span>
-              </div>
-            )}
-            
             {costEstimate.tagCount > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="flex items-center gap-2 text-gray-600">
@@ -137,22 +115,10 @@ export function BulkOperationConfirmation({
               </span>
             </div>
             <div className="text-xs text-emerald-600 mt-2">
-              Azure TTS: {formatCost(costEstimate.estimatedAudioCost)} • 
               AI (examples): {formatCost(costEstimate.estimatedAiCost)}
             </div>
           </div>
 
-          {operationType === 'complete' && (
-            <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
-              <strong>Processing order:</strong>
-              <ol className="list-decimal list-inside mt-1 space-y-0.5">
-                <li>Generate example sentences (AI)</li>
-                <li>Generate word audio (TTS)</li>
-                <li>Generate example audio (TTS)</li>
-                <li>Auto-tag (AI)</li>
-              </ol>
-            </div>
-          )}
         </div>
 
         {/* Footer */}

@@ -93,10 +93,9 @@ export function VocabularyList() {
     },
   });
 
-  // Bulk operations hook (audio, examples, tags, complete)
+  // Bulk operations hook (examples, tags)
   const bulkOps = useBulkOperations({
     batchSize: 5, // Process 5 at a time
-    voice: 'xiaoxiao',
     onComplete: () => {
       // Refresh vocabulary to show updated data
       loadVocabulary();
@@ -277,11 +276,7 @@ export function VocabularyList() {
       if (filterInLesson) params.in_lesson = 'true';
       
       // For specific operations, override to target items that need work
-      if (type === 'audio') {
-        // Get items WITHOUT audio (override has_audio filter)
-        delete params.has_audio;
-        params.has_audio = 'false';
-      } else if (type === 'example') {
+      if (type === 'example') {
         // Get items WITHOUT example
         delete params.has_example;
         params.has_example = 'false';
@@ -289,7 +284,6 @@ export function VocabularyList() {
         // Get items missing secondary categories
         params.missing_secondary = 'true';
       }
-      // For 'complete', use the filters as-is and let staged processing handle it
       
       const response = await searchVocabulary(params);
       let itemsToProcess = response.results;
@@ -300,7 +294,7 @@ export function VocabularyList() {
       }
       
       if (itemsToProcess.length === 0) {
-        toast.info('Nothing to process', `All items already have ${type === 'audio' ? 'audio' : type === 'example' ? 'examples' : 'tags'}`);
+        toast.info('Nothing to process', `All items already have ${type === 'example' ? 'examples' : 'tags'}`);
         return;
       }
       

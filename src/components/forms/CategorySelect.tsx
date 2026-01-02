@@ -36,6 +36,7 @@ export const COMMON_CATEGORIES = [
   'sports',
   'hobbies',
   'technology',
+  'proper_noun', // Names, places, etc. - excluded from vocab practice & smart layer
   'other',
 ] as const;
 
@@ -51,6 +52,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   food: 'bg-orange-100 text-orange-700',
   verbs: 'bg-green-100 text-green-700',
   adjectives: 'bg-teal-100 text-teal-700',
+  proper_noun: 'bg-amber-100 text-amber-700', // Names, places - excluded from practice
   other: 'bg-gray-100 text-gray-700',
 };
 

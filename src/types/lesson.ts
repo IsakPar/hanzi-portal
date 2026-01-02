@@ -29,6 +29,14 @@ export interface BaseBlock {
   orderIndex?: number; 
 }
 
+// Testing skill - what knowledge is being assessed by a block
+export type TestingSkill = 
+  | 'vocab'                   // Vocabulary recognition/recall
+  | 'grammar'                 // Grammar pattern understanding
+  | 'reading_comprehension'   // Understanding written passages
+  | 'listening_comprehension' // Understanding spoken audio
+  | 'translation';            // Translation ability
+
 // ==================== INTRO BLOCK ====================
 
 export interface IntroBlock extends BaseBlock {
@@ -114,6 +122,8 @@ export interface ExerciseMultipleChoiceBlock extends BaseBlock {
       audioUrl?: string; // ElevenLabs generated audio for this option
     }>;
     explanation?: string;
+    /** What skill is being tested - affects Smart Layer tracking */
+    testingSkill?: TestingSkill;
   };
 }
 
@@ -125,6 +135,8 @@ export interface ExerciseDragSentenceBlock extends BaseBlock {
     wordPool: string[];
     hint?: string;
     explanation?: string;
+    /** What skill is being tested - affects Smart Layer tracking */
+    testingSkill?: TestingSkill;
   };
 }
 
@@ -195,6 +207,8 @@ export interface ReadingComprehensionBlock extends BaseBlock {
     instruction: string;
     questions: ComprehensionQuestion[];
     explanation?: string;
+    /** What skill is being tested - affects Smart Layer tracking. Defaults to 'reading_comprehension' */
+    testingSkill?: TestingSkill;
   };
 }
 

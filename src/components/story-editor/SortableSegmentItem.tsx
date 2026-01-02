@@ -96,6 +96,13 @@ export function SortableSegmentItem({
               Segment {index + 1}
             </div>
 
+            {/* Speaker (for dialogues) */}
+            {segment.speaker && (
+              <div className="text-sm font-medium text-purple-600 mb-1">
+                💬 {segment.speaker}
+              </div>
+            )}
+
             {/* Chinese */}
             <div className="text-2xl font-medium text-gray-900 leading-relaxed mb-1">
               {segment.chinese}

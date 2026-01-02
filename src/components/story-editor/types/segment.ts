@@ -69,6 +69,7 @@ export function createNewSegment(storyId: string, orderIndex: number): EditableS
     chinese: '',
     pinyin: '',
     english: '',
+    speaker: null,
     audioUrl: null,
     createdAt: new Date(),
     isNew: true,
@@ -96,6 +97,7 @@ export interface SegmentFormData {
   chinese: string;
   pinyin: string;
   english: string;
+  speaker?: string;
 }
 
 /**
@@ -106,6 +108,7 @@ export function extractFormData(segment: EditableSegment): SegmentFormData {
     chinese: segment.chinese,
     pinyin: segment.pinyin,
     english: segment.english,
+    speaker: segment.speaker || undefined,
   };
 }
 

@@ -10,10 +10,11 @@
 
 import { useState, useCallback } from 'react';
 import { FormField } from '../shared/FormField';
-import type { ExerciseMultipleChoiceBlock } from '@/types/lesson';
+import type { ExerciseMultipleChoiceBlock, TestingSkill } from '@/types/lesson';
 import { Plus, Trash2, CheckCircle, Zap, Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { InlineAudioStatus } from '@/components/audio/InlineAudioStatus';
 import { AISuggestButton } from '@/components/ai/AISuggestButton';
 import { AlternativesPanel } from '@/components/ai/AlternativesPanel';
@@ -461,6 +462,29 @@ export function MultipleChoiceEditor({ block, onChange, lessonId = '', hskLevel 
         placeholder="Explain why this is correct..."
         multiline
       />
+
+      {/* Testing Skill - For Smart Layer tracking */}
+      <div className="space-y-2">
+        <Label>Testing Skill</Label>
+        <p className="text-xs text-muted-foreground">
+          What knowledge is this testing? Affects how learning is tracked.
+        </p>
+        <Select
+          value={block.content.testingSkill || 'vocab'}
+          onValueChange={(value) => updateContent('testingSkill', value as TestingSkill)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select skill..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="vocab">📚 Vocabulary</SelectItem>
+            <SelectItem value="grammar">📐 Grammar</SelectItem>
+            <SelectItem value="reading_comprehension">📖 Reading Comprehension</SelectItem>
+            <SelectItem value="listening_comprehension">👂 Listening Comprehension</SelectItem>
+            <SelectItem value="translation">🔄 Translation</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }

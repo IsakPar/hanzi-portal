@@ -5,7 +5,8 @@
 
 import { useState } from 'react';
 import { FormField } from '../shared/FormField';
-import type { ReadingComprehensionBlock } from '@/types/lesson';
+import type { ReadingComprehensionBlock, TestingSkill } from '@/types/lesson';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, CheckCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -238,6 +239,29 @@ export function ReadingComprehensionEditor({ block, onChange, lessonId = '', hsk
             Add Question
           </button>
         </div>
+      </div>
+
+      {/* Testing Skill - For Smart Layer tracking */}
+      <div className="space-y-2">
+        <Label>Testing Skill</Label>
+        <p className="text-xs text-muted-foreground">
+          What knowledge is this testing? Defaults to Reading Comprehension.
+        </p>
+        <Select
+          value={block.content.testingSkill || 'reading_comprehension'}
+          onValueChange={(value) => updateContent('testingSkill', value as TestingSkill)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select skill..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="vocab">📚 Vocabulary</SelectItem>
+            <SelectItem value="grammar">📐 Grammar</SelectItem>
+            <SelectItem value="reading_comprehension">📖 Reading Comprehension</SelectItem>
+            <SelectItem value="listening_comprehension">👂 Listening Comprehension</SelectItem>
+            <SelectItem value="translation">🔄 Translation</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

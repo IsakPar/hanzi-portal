@@ -2,11 +2,25 @@
 import { useState } from "react";
 import type { StoryWithDetails } from "@/services/storiesAPI";
 import type { ContentBlock, BlockType } from "@/types/lesson";
-import { Plus, Edit, Trash2, GripVertical } from "lucide-react";
+
+// Practice intro type
+interface PracticeIntro {
+  enabled: boolean;
+  title?: string;
+  message?: string;
+  skipLabel?: string;
+  startLabel?: string;
+}
+
+// Internal type for blocks including practiceIntro
+type InternalBlock = ContentBlock | { type: '_practice_intro'; id?: string; content: PracticeIntro };
+import { Plus, Edit, Trash2, GripVertical, MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
 import { BlockEditor } from "@/components/BlockEditor";
 import { createDefaultBlock } from "@/lib/block-defaults";
 import { cn } from "@/lib/utils";
 import { useConfirm } from "@/hooks/useConfirm";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DndContext,
   closestCenter,
@@ -31,19 +45,59 @@ interface StoryPracticeTabProps {
   onChange: (story: StoryWithDetails) => void;
 }
 
+// Default practice intro config
+const DEFAULT_PRACTICE_INTRO: PracticeIntro = {
+  enabled: true,
+  title: "Practice Time! 📝",
+  message: "Want to test your understanding?",
+  skipLabel: "Skip",
+  startLabel: "Let's go!",
+};
+
 export function StoryPracticeTab({ story, onChange }: StoryPracticeTabProps) {
   const { confirm, ConfirmDialogComponent } = useConfirm();
+  
+  // Parse practiceBlocks and extract practiceIntro if present
   const [blocks, setBlocks] = useState<ContentBlock[]>(() => {
-    // Ensure we always have an array, even if practiceBlocks is a JSON string or undefined
     const pb = story.practiceBlocks;
-    if (Array.isArray(pb)) return pb;
-    if (typeof pb === 'string') {
-      try { return JSON.parse(pb); } catch { return []; }
+    let arr: InternalBlock[] = [];
+    if (Array.isArray(pb)) arr = pb as InternalBlock[];
+    else if (typeof pb === 'string') {
+      try { arr = JSON.parse(pb); } catch { arr = []; }
     }
-    return [];
+    // Filter out _practice_intro block and return only ContentBlocks
+    return arr.filter(b => b.type !== '_practice_intro') as ContentBlock[];
   });
+  
+  const [practiceIntro, setPracticeIntro] = useState<PracticeIntro>(() => {
+    const pb = story.practiceBlocks;
+    let arr: InternalBlock[] = [];
+    if (Array.isArray(pb)) arr = pb as InternalBlock[];
+    else if (typeof pb === 'string') {
+      try { arr = JSON.parse(pb); } catch { arr = []; }
+    }
+    // Find _practice_intro block
+    const introBlock = arr.find(b => b.type === '_practice_intro') as { type: '_practice_intro'; content: PracticeIntro } | undefined;
+    if (introBlock?.content) {
+      return { ...DEFAULT_PRACTICE_INTRO, ...introBlock.content };
+    }
+    return DEFAULT_PRACTICE_INTRO;
+  });
+  
+  const [showIntroSettings, setShowIntroSettings] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
+  
+  // Sync practiceIntro changes back to story
+  const updatePracticeIntro = (updates: Partial<PracticeIntro>) => {
+    const newIntro = { ...practiceIntro, ...updates };
+    setPracticeIntro(newIntro);
+    // Build full practiceBlocks with intro at start
+    const fullBlocks: InternalBlock[] = newIntro.enabled 
+      ? [{ type: '_practice_intro' as const, content: newIntro }, ...blocks]
+      : blocks;
+    onChange({ ...story, practiceBlocks: fullBlocks as any });
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -52,11 +106,18 @@ export function StoryPracticeTab({ story, onChange }: StoryPracticeTabProps) {
     })
   );
 
+  // Helper to build full practiceBlocks array (with intro)
+  const buildFullBlocks = (blockList: ContentBlock[]): any[] => {
+    return practiceIntro.enabled
+      ? [{ type: '_practice_intro' as const, content: practiceIntro }, ...blockList]
+      : blockList;
+  };
+
   const handleAddBlock = (type: BlockType) => {
     const newBlock = createDefaultBlock(type);
     const newBlocks = [...blocks, newBlock];
     setBlocks(newBlocks);
-    onChange({ ...story, practiceBlocks: newBlocks });
+    onChange({ ...story, practiceBlocks: buildFullBlocks(newBlocks) });
     setEditingIndex(newBlocks.length - 1);
     setShowLibrary(false);
   };
@@ -65,7 +126,7 @@ export function StoryPracticeTab({ story, onChange }: StoryPracticeTabProps) {
     const newBlocks = [...blocks];
     newBlocks[index] = updatedBlock;
     setBlocks(newBlocks);
-    onChange({ ...story, practiceBlocks: newBlocks });
+    onChange({ ...story, practiceBlocks: buildFullBlocks(newBlocks) });
   };
 
   const handleDeleteBlock = async (index: number) => {
@@ -78,7 +139,7 @@ export function StoryPracticeTab({ story, onChange }: StoryPracticeTabProps) {
     if (!confirmed) return;
     const newBlocks = blocks.filter((_, i) => i !== index);
     setBlocks(newBlocks);
-    onChange({ ...story, practiceBlocks: newBlocks });
+    onChange({ ...story, practiceBlocks: buildFullBlocks(newBlocks) });
     if (editingIndex === index) {
       setEditingIndex(null);
     }
@@ -93,13 +154,13 @@ export function StoryPracticeTab({ story, onChange }: StoryPracticeTabProps) {
 
     const newBlocks = arrayMove(blocks, oldIndex, newIndex);
     setBlocks(newBlocks);
-    onChange({ ...story, practiceBlocks: newBlocks });
+    onChange({ ...story, practiceBlocks: buildFullBlocks(newBlocks) });
   };
 
   const handleAIBlocksGenerated = (newBlocks: ContentBlock[]) => {
     const combined = [...blocks, ...newBlocks];
     setBlocks(combined);
-    onChange({ ...story, practiceBlocks: combined });
+    onChange({ ...story, practiceBlocks: buildFullBlocks(combined) });
   };
 
   return (
@@ -184,6 +245,94 @@ export function StoryPracticeTab({ story, onChange }: StoryPracticeTabProps) {
               <Plus size={16} />
               {showLibrary ? 'Hide Library' : 'Add Block'}
             </button>
+          </div>
+
+          {/* Practice Intro Settings */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <button
+              onClick={() => setShowIntroSettings(!showIntroSettings)}
+              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <MessageSquare className="w-5 h-5 text-purple-600" />
+                <div className="text-left">
+                  <div className="font-semibold text-gray-800">Practice Prompt</div>
+                  <div className="text-sm text-gray-500">
+                    {practiceIntro.enabled ? 'Users can skip or start practice' : 'Disabled - practice starts automatically'}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={practiceIntro.enabled}
+                    onChange={(e) => updatePracticeIntro({ enabled: e.target.checked })}
+                    className="w-4 h-4 text-purple-600 rounded"
+                  />
+                  <span className="text-sm text-gray-600">Enabled</span>
+                </label>
+                {showIntroSettings ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              </div>
+            </button>
+            
+            {showIntroSettings && practiceIntro.enabled && (
+              <div className="px-6 py-4 border-t border-gray-100 space-y-4 bg-gray-50">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Title</Label>
+                    <Input
+                      value={practiceIntro.title || ''}
+                      onChange={(e) => updatePracticeIntro({ title: e.target.value })}
+                      placeholder="Practice Time! 📝"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Message</Label>
+                    <Input
+                      value={practiceIntro.message || ''}
+                      onChange={(e) => updatePracticeIntro({ message: e.target.value })}
+                      placeholder="Want to test your understanding?"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Skip Button</Label>
+                    <Input
+                      value={practiceIntro.skipLabel || ''}
+                      onChange={(e) => updatePracticeIntro({ skipLabel: e.target.value })}
+                      placeholder="Skip"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Start Button</Label>
+                    <Input
+                      value={practiceIntro.startLabel || ''}
+                      onChange={(e) => updatePracticeIntro({ startLabel: e.target.value })}
+                      placeholder="Let's go!"
+                    />
+                  </div>
+                </div>
+                
+                {/* Preview */}
+                <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+                  <div className="text-xs font-medium text-gray-400 uppercase mb-2">Preview</div>
+                  <div className="text-center space-y-3">
+                    <div className="text-xl font-bold text-gray-800">{practiceIntro.title || 'Practice Time! 📝'}</div>
+                    <div className="text-gray-600">{practiceIntro.message || 'Want to test your understanding?'}</div>
+                    <div className="flex justify-center gap-3">
+                      <button className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg text-sm">
+                        {practiceIntro.skipLabel || 'Skip'}
+                      </button>
+                      <button className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm">
+                        {practiceIntro.startLabel || "Let's go!"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* AI Practice Generator */}

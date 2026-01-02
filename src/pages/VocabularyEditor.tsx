@@ -8,9 +8,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { 
-  ArrowLeft, Save, AlertCircle, Loader2, Volume2, X
+  ArrowLeft, Save, AlertCircle, Loader2, X
 } from "lucide-react";
 import {
   getVocabulary,
@@ -22,15 +21,13 @@ import {
   translateHanzi,
   type VocabularyEntry,
 } from "@/services/vocabularyAPI";
-import { synthesize as generateAzureSpeech } from "@/services/azureTtsAPI";
 import { tagWord } from "@/services/distractorsAPI";
 import { toast } from "@/hooks/useToast";
 import api from "@/services/api";
 import { pinyin as pinyinPro } from "pinyin-pro";
 
 // Reusable components
-import { AudioPreviewApproval } from "@/components/audio/AudioPreviewApproval";
-import { AZURE_VOICES, DEFAULT_AZURE_VOICE } from "@/services/azureTtsAPI";
+import { SimpleAudioUploader } from "@/components/audio/SimpleAudioUploader";
 import {
   VocabBasicsSection,
   VocabExampleSection,
@@ -102,7 +99,6 @@ export function VocabularyEditor({
   
   // AI/Audio state
   const [generatingExample, setGeneratingExample] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState(DEFAULT_AZURE_VOICE);
 
   // Load entry
   useEffect(() => {
@@ -269,18 +265,8 @@ export function VocabularyEditor({
     return created.id;
   };
 
-  // Audio handlers
-  // Generate preview uses text directly (no wordId needed)
-  // Save requires entry to be saved first
-  
-  const handleGenerateWordAudio = async (): Promise<{ base64: string; needsTrim?: boolean }> => {
-    if (!entry.hanzi?.trim()) throw new Error("No hanzi to speak");
-    // Azure TTS - accurate tones without needing trim workarounds
-    const result = await generateAzureSpeech(entry.hanzi, selectedVoice, entry.pinyin);
-    return { base64: result.audioBase64, needsTrim: false };
-  };
-  
-  const handleSaveWordAudio = async (base64: string): Promise<number> => {
+  // Audio handlers - now uses upload instead of TTS generation
+  const handleSaveWordAudio = async (base64: string): Promise<void> => {
     const wordId = await ensureSaved();
     const result = await saveWordAudio(wordId, base64);
     // Update state with new R2 key AND timestamp for cache busting
@@ -289,17 +275,10 @@ export function VocabularyEditor({
       wordAudioR2Key: result.r2Key,
       wordAudioUpdatedAt: result.audioUpdatedAt,
     }));
-    return result.audioUpdatedAt; // Return timestamp for immediate use
+    toast.success("Audio saved!", "Word audio uploaded successfully");
   };
   
-  const handleGenerateExampleAudio = async (): Promise<{ base64: string; needsTrim?: boolean }> => {
-    if (!entry.exampleChinese?.trim()) throw new Error("No example sentence to speak");
-    // Azure TTS for sentences - natural and accurate
-    const result = await generateAzureSpeech(entry.exampleChinese, selectedVoice);
-    return { base64: result.audioBase64, needsTrim: false };
-  };
-  
-  const handleSaveExampleAudio = async (base64: string): Promise<number> => {
+  const handleSaveExampleAudio = async (base64: string): Promise<void> => {
     const wordId = await ensureSaved();
     const result = await saveExampleAudio(wordId, base64);
     // Update state with new R2 key AND timestamp for cache busting
@@ -308,7 +287,7 @@ export function VocabularyEditor({
       exampleAudioR2Key: result.r2Key,
       exampleAudioUpdatedAt: result.audioUpdatedAt,
     }));
-    return result.audioUpdatedAt; // Return timestamp for immediate use
+    toast.success("Audio saved!", "Example audio uploaded successfully");
   };
 
   // Save
@@ -391,20 +370,6 @@ export function VocabularyEditor({
               {isNew ? "Create a new entry" : "Update entry with audio"}
             </p>
           </div>
-          {!isNew && (
-            <div className="flex items-center gap-2">
-              <Label className="text-sm text-gray-600">Voice:</Label>
-              <select
-                value={selectedVoice}
-                onChange={(e) => setSelectedVoice(e.target.value)}
-                className="text-sm px-2 py-1 border border-gray-300 rounded-lg"
-              >
-                {AZURE_VOICES.map((v) => (
-                  <option key={v.key} value={v.key}>{v.name} ({v.gender})</option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
       </div>
 
@@ -444,27 +409,13 @@ export function VocabularyEditor({
                 return { english: result.english, pinyin: result.pinyin };
               }}
             />
-            {/* Word Audio */}
+            {/* Word Audio - Upload from ElevenLabs portal */}
             <div className="mt-4">
-              <AudioPreviewApproval
+              <SimpleAudioUploader
                 label="Word Audio"
-                icon={<Volume2 className="w-4 h-4" />}
-                colorTheme="purple"
-                savedAudioKey={entry.wordAudioR2Key}
-                audioUpdatedAt={entry.wordAudioUpdatedAt}
-                canGenerate={!!entry.hanzi?.trim()}
-                disabledHint="💡 Enter Hanzi first to generate audio"
-                onGenerate={handleGenerateWordAudio}
-                onSave={handleSaveWordAudio}
-                targetWord={entry.hanzi || ''}
+                existingAudioKey={entry.wordAudioR2Key}
+                onUpload={handleSaveWordAudio}
               />
-              
-              {/* Info for short words */}
-              {(entry.hanzi?.length || 0) <= 2 && (
-                <p className="mt-2 text-xs text-purple-600 bg-purple-50 p-2 rounded-lg border border-purple-100">
-                  💡 For 1-2 character words, audio is generated with a double-take format for accurate pronunciation. Use the trim tool to select the clean word.
-                </p>
-              )}
             </div>
           </section>
 
@@ -480,7 +431,6 @@ export function VocabularyEditor({
               isNew={effectiveIsNew}
               generatingExample={generatingExample}
               onGenerateExample={handleGenerateExample}
-              onGenerateAudio={handleGenerateExampleAudio}
               onSaveAudio={handleSaveExampleAudio}
             />
           </section>

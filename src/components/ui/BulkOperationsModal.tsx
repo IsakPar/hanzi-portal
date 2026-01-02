@@ -4,7 +4,7 @@
  * Shows progress for bulk vocabulary operations
  */
 
-import { X, CheckCircle2, XCircle, Loader2, Volume2, MessageSquare, Tag, Zap, RotateCcw } from 'lucide-react';
+import { X, CheckCircle2, XCircle, Loader2, MessageSquare, Tag, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { BulkOperationType, BulkOperationProgress } from '@/hooks/useBulkOperations';
 
@@ -19,10 +19,8 @@ interface BulkOperationsModalProps {
 }
 
 const operationLabels: Record<BulkOperationType, { title: string; icon: React.ReactNode }> = {
-  audio: { title: 'Generating Audio', icon: <Volume2 className="w-5 h-5" /> },
   example: { title: 'Generating Examples', icon: <MessageSquare className="w-5 h-5" /> },
   tags: { title: 'Auto-Tagging', icon: <Tag className="w-5 h-5" /> },
-  complete: { title: 'Complete Processing', icon: <Zap className="w-5 h-5" /> },
 };
 
 export function BulkOperationsModal({

@@ -4,12 +4,12 @@
  * Section 2 of VocabularyEditor: Example sentence with AI generation
  */
 
-import { Loader2, Sparkles, Music } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { AudioPreviewApproval } from "@/components/audio/AudioPreviewApproval";
+import { SimpleAudioUploader } from "@/components/audio/SimpleAudioUploader";
 import type { VocabularyEntry } from "@/services/vocabularyAPI";
 
 interface VocabExampleSectionProps {
@@ -18,8 +18,7 @@ interface VocabExampleSectionProps {
   isNew: boolean;
   generatingExample: boolean;
   onGenerateExample: () => void;
-  onGenerateAudio: () => Promise<{ base64: string; needsTrim?: boolean }>;
-  onSaveAudio: (base64: string) => Promise<number | void>;
+  onSaveAudio: (base64: string) => Promise<void>;
 }
 
 export function VocabExampleSection({
@@ -28,7 +27,6 @@ export function VocabExampleSection({
   isNew: _isNew, // No longer used to block generation
   generatingExample,
   onGenerateExample,
-  onGenerateAudio,
   onSaveAudio,
 }: VocabExampleSectionProps) {
   // Check if minimum required fields are filled (for auto-save)
@@ -92,18 +90,12 @@ export function VocabExampleSection({
         />
       </div>
 
-      {/* Example Audio Section */}
+      {/* Example Audio Section - Upload from ElevenLabs portal */}
       {entry.exampleChinese && (
-        <AudioPreviewApproval
+        <SimpleAudioUploader
           label="Sentence Audio"
-          icon={<Music className="w-4 h-4" />}
-          colorTheme="blue"
-          savedAudioKey={entry.exampleAudioR2Key}
-          audioUpdatedAt={entry.exampleAudioUpdatedAt}
-          canGenerate={!!entry.exampleChinese?.trim()}
-          disabledHint="💡 Enter example sentence first to generate audio"
-          onGenerate={onGenerateAudio}
-          onSave={onSaveAudio}
+          existingAudioKey={entry.exampleAudioR2Key}
+          onUpload={onSaveAudio}
         />
       )}
     </div>

@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { X, Plus, GripVertical, Trash2, Edit2, BookOpen, ChevronRight, Palette, Check } from 'lucide-react';
+import { X, Plus, GripVertical, Trash2, Edit2, BookOpen, ChevronRight, Palette, Check, Upload, FileJson, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/hooks/useConfirm';
 import { toast } from '@/hooks/useToast';
@@ -22,6 +22,7 @@ import {
   type StorySeries,
   type SeriesWithStories,
   type CreateSeriesInput,
+  type SeriesImportData,
 } from '@/services/storiesAPI';
 import { ThumbnailUploader, Thumbnail } from './ThumbnailUploader';
 
@@ -48,7 +49,7 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
   const [loading, setLoading] = useState(true);
   const [series, setSeries] = useState<StorySeries[]>([]);
   const [selectedSeries, setSelectedSeries] = useState<SeriesWithStories | null>(null);
-  const [editMode, setEditMode] = useState<'list' | 'create' | 'edit'>('list');
+  const [editMode, setEditMode] = useState<'list' | 'create' | 'edit' | 'import'>('list');
   const [formData, setFormData] = useState<CreateSeriesInput>({
     title: '',
     description: '',
@@ -57,6 +58,11 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
     isPublished: false,
   });
   const [saving, setSaving] = useState(false);
+  
+  // JSON import state
+  const [jsonInput, setJsonInput] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [parsedImport, setParsedImport] = useState<SeriesImportData | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -183,6 +189,63 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
     handleReorderStories(stories.map(s => s.id));
   }
 
+  // JSON Import handlers
+  function handleJsonChange(value: string) {
+    setJsonInput(value);
+    setJsonError(null);
+    setParsedImport(null);
+    
+    if (!value.trim()) return;
+    
+    try {
+      const parsed = JSON.parse(value) as SeriesImportData;
+      
+      // Validate required fields
+      if (!parsed.title) {
+        setJsonError('Missing required field: title');
+        return;
+      }
+      
+      setParsedImport(parsed);
+    } catch (err) {
+      setJsonError(`Invalid JSON: ${(err as Error).message}`);
+    }
+  }
+
+  function applyImportToForm() {
+    if (!parsedImport) return;
+    
+    // Build description from titleEn and description
+    let description = parsedImport.description || '';
+    if (parsedImport.titleEn && !description.includes(parsedImport.titleEn)) {
+      description = parsedImport.titleEn + (description ? ' — ' + description : '');
+    }
+    
+    setFormData({
+      title: parsedImport.title,
+      description,
+      color: '#4F46E5', // Default, user can change
+      hskLevel: parsedImport.hskLevel,
+      isPublished: false,
+      accessTier: parsedImport.accessTier,
+      tags: parsedImport.tags,
+      metadata: {
+        titleEn: parsedImport.titleEn,
+        characters: parsedImport.characters,
+        parts: parsedImport.parts,
+        author: parsedImport.author,
+        difficulty: parsedImport.difficulty,
+        totalParts: parsedImport.totalParts,
+        estimatedTotalMinutes: parsedImport.estimatedTotalMinutes,
+      },
+    });
+    
+    setEditMode('create');
+    setJsonInput('');
+    setParsedImport(null);
+    toast.success('JSON imported! Review and create the series.');
+  }
+
   if (!isOpen) return null;
 
   return (
@@ -208,6 +271,93 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
             {loading ? (
               <div className="flex items-center justify-center h-64">
                 <div className="animate-spin w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full" />
+              </div>
+            ) : editMode === 'import' ? (
+              /* JSON Import Mode */
+              <div className="p-6 space-y-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <FileJson className="w-6 h-6 text-purple-600" />
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Import from JSON</h3>
+                    <p className="text-sm text-gray-500">Paste a _series.json from content-planner</p>
+                  </div>
+                </div>
+                
+                <div>
+                  <textarea
+                    value={jsonInput}
+                    onChange={(e) => handleJsonChange(e.target.value)}
+                    placeholder={`{
+  "title": "小明的一天",
+  "titleEn": "Xiaoming's Day",
+  "description": "Follow Xiaoming through a typical day...",
+  "hskLevel": 1,
+  "characters": [...],
+  "parts": [...]
+}`}
+                    rows={12}
+                    className={`w-full px-4 py-3 font-mono text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      jsonError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                </div>
+                
+                {jsonError && (
+                  <div className="flex items-center gap-2 text-red-600 text-sm">
+                    <AlertCircle className="w-4 h-4" />
+                    {jsonError}
+                  </div>
+                )}
+                
+                {parsedImport && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-green-700 font-medium">
+                      <Check className="w-4 h-4" />
+                      Valid JSON detected
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-500">Title:</span>{' '}
+                        <span className="font-medium">{parsedImport.title}</span>
+                      </div>
+                      {parsedImport.titleEn && (
+                        <div>
+                          <span className="text-gray-500">English:</span>{' '}
+                          <span className="font-medium">{parsedImport.titleEn}</span>
+                        </div>
+                      )}
+                      {parsedImport.hskLevel && (
+                        <div>
+                          <span className="text-gray-500">HSK Level:</span>{' '}
+                          <span className="font-medium">HSK {parsedImport.hskLevel}</span>
+                        </div>
+                      )}
+                      {parsedImport.parts && (
+                        <div>
+                          <span className="text-gray-500">Parts:</span>{' '}
+                          <span className="font-medium">{parsedImport.parts.length} stories</span>
+                        </div>
+                      )}
+                      {parsedImport.characters && (
+                        <div>
+                          <span className="text-gray-500">Characters:</span>{' '}
+                          <span className="font-medium">{parsedImport.characters.length} defined</span>
+                        </div>
+                      )}
+                      {parsedImport.tags && (
+                        <div className="col-span-2">
+                          <span className="text-gray-500">Tags:</span>{' '}
+                          <span className="font-medium">{parsedImport.tags.join(', ')}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <Button onClick={applyImportToForm} className="w-full mt-3">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import & Continue to Form
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : editMode === 'create' || editMode === 'edit' ? (
               /* Create/Edit Form */
@@ -368,6 +518,7 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
                     <h3 className="text-xl font-bold text-gray-900">{selectedSeries.title}</h3>
                     <p className="text-gray-500">{selectedSeries.storyCount} stories</p>
                   </div>
+                  <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -385,6 +536,16 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
                     <Edit2 className="w-4 h-4 mr-2" />
                     Edit
                   </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeleteSeries(selectedSeries.id)}
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
+                    </Button>
+                  </div>
                 </div>
 
                 {selectedSeries.stories.length === 0 ? (
@@ -475,18 +636,24 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
                           </div>
                           <p className="text-sm text-gray-500">{s.storyCount} stories</p>
                         </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSeries(s.id);
+                            }}
+                            className="px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete
+                          </button>
                         <button
                           onClick={() => loadSeriesDetails(s.id)}
                           className="p-2 hover:bg-gray-200 rounded-lg"
                         >
                           <ChevronRight className="w-5 h-5 text-gray-400" />
                         </button>
-                        <button
-                          onClick={() => handleDeleteSeries(s.id)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -498,13 +665,37 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-200 flex justify-between">
             {editMode === 'list' && !selectedSeries && series.length > 0 && (
+              <div className="flex gap-2">
               <Button onClick={() => setEditMode('create')}>
                 <Plus className="w-4 h-4 mr-2" />
                 New Series
               </Button>
+                <Button variant="outline" onClick={() => {
+                  setEditMode('import');
+                  setJsonInput('');
+                  setJsonError(null);
+                  setParsedImport(null);
+                }}>
+                  <FileJson className="w-4 h-4 mr-2" />
+                  Import JSON
+                </Button>
+              </div>
             )}
             {editMode === 'list' && selectedSeries && (
               <div />
+            )}
+            {editMode === 'import' && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditMode('list');
+                  setJsonInput('');
+                  setJsonError(null);
+                  setParsedImport(null);
+                }}
+              >
+                Cancel
+              </Button>
             )}
             {(editMode === 'create' || editMode === 'edit') && (
               <>
@@ -526,7 +717,21 @@ export function SeriesManagerModal({ isOpen, onClose, onSeriesChange }: SeriesMa
               </>
             )}
             {editMode === 'list' && !selectedSeries && series.length === 0 && (
-              <div />
+              <div className="flex gap-2">
+                <Button onClick={() => setEditMode('create')}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Series
+                </Button>
+                <Button variant="outline" onClick={() => {
+                  setEditMode('import');
+                  setJsonInput('');
+                  setJsonError(null);
+                  setParsedImport(null);
+                }}>
+                  <FileJson className="w-4 h-4 mr-2" />
+                  Import JSON
+                </Button>
+              </div>
             )}
             <Button variant="outline" onClick={onClose}>
               Close

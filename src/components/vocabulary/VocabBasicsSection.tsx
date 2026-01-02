@@ -98,6 +98,29 @@ export function VocabBasicsSection({
         </div>
       </div>
 
+      {/* Proper Noun Toggle */}
+      <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+        <input
+          type="checkbox"
+          id="isProperNoun"
+          checked={entry.category === 'proper_noun'}
+          onChange={(e) => {
+            if (e.target.checked) {
+              onChange({ category: 'proper_noun' });
+            } else {
+              onChange({ category: '' });
+            }
+          }}
+          className="w-4 h-4 text-amber-600 rounded"
+        />
+        <label htmlFor="isProperNoun" className="flex-1 cursor-pointer">
+          <span className="font-medium text-amber-800">This is a name / proper noun</span>
+          <p className="text-xs text-amber-600">
+            Names like 小明, 妈妈, 北京 etc. Will have audio but won't appear in vocabulary practice.
+          </p>
+        </label>
+      </div>
+
       {/* Category & HSK */}
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -109,14 +132,20 @@ export function VocabBasicsSection({
             value={entry.category || ""}
             onChange={(e) => onChange({ category: e.target.value })}
             className="w-full border rounded-md px-3 py-2"
+            disabled={entry.category === 'proper_noun'}
           >
             <option value="">Select category...</option>
             {COMMON_CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>
-                {cat}
+                {cat === 'proper_noun' ? '👤 Proper Noun (Name)' : cat}
               </option>
             ))}
           </select>
+          {entry.category === 'proper_noun' && (
+            <p className="text-xs text-amber-600 mt-1">
+              ⚠️ Proper nouns are excluded from vocab practice & smart layer
+            </p>
+          )}
         </div>
         <div>
           <Label htmlFor="hskLevel">HSK Level</Label>

@@ -83,6 +83,16 @@ export function SegmentEditForm({
           />
         </div>
 
+        {/* Speaker (for dialogues) */}
+        <div>
+          <Label>Speaker <span className="text-gray-400 font-normal">(optional, for dialogues)</span></Label>
+          <Input
+            value={formData.speaker || ''}
+            onChange={(e) => setFormData(prev => ({ ...prev, speaker: e.target.value || undefined }))}
+            placeholder="e.g., 妈妈, 小明, Narrator"
+          />
+        </div>
+
         {/* Actions */}
         <div className="flex justify-end gap-2">
           <Button
