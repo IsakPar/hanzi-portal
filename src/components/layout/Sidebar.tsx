@@ -1,4 +1,4 @@
-import { LayoutDashboard, BookOpen, PenTool, BarChart3, Settings, LogOut, BookText, Wand2, Users, Webhook, Database, Shield, Package, Gauge, Sliders, CreditCard, Activity, Volume2 } from "lucide-react";
+import { LayoutDashboard, BookOpen, PenTool, BarChart3, Settings, LogOut, BookText, Wand2, Users, Webhook, Database, Shield, Package, Gauge, Sliders, CreditCard, Activity, Volume2, Sparkles } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -18,13 +18,14 @@ const contentItems = [
 // Admin-only sidebar items
 const adminItems = [
   { icon: Gauge, label: "Control Center", href: "/control-center", color: "text-emerald-600" },
+  { icon: Sparkles, label: "Story Showcase", href: "/showcase", color: "text-pink-600" },
   { icon: Activity, label: "Performance", href: "/performance", color: "text-blue-600" },
   { icon: CreditCard, label: "Subscriptions", href: "/subscriptions", color: "text-amber-600" },
   { icon: Sliders, label: "Rate Limits", href: "/rate-limits", color: "text-orange-600" },
   { icon: Shield, label: "Users", href: "/users", color: "text-purple-600" },
   { icon: Users, label: "Waitlist", href: "/waitlist", color: "text-slate-600" },
   { icon: Settings, label: "Settings", href: "/settings", color: "text-slate-600" },
-  { icon: Package, label: "Export", href: "/export", color: "text-slate-600" },
+  { icon: Package, label: "Release Manager", href: "/export", color: "text-emerald-600" },
   { icon: Webhook, label: "Webhooks", href: "/webhooks", color: "text-slate-600" },
 ];
 

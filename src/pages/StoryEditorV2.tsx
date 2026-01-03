@@ -98,7 +98,9 @@ export function StoryEditorV2() {
   const isNew = id === 'new';
 
   // Check for imported data from JSON import workflow
-  const importedData = (location.state as { importedStory?: StoryImportData } | null)?.importedStory;
+  const locationState = location.state as { importedStory?: StoryImportData; isUpdate?: boolean } | null;
+  const importedData = locationState?.importedStory;
+  const isUpdateExisting = locationState?.isUpdate === true;
 
   // ─────────────────────────────────────────────────────────
   // STATE
@@ -145,7 +147,20 @@ export function StoryEditorV2() {
     
     const sentences = story.sentences?.length || 0;
     const withAudio = story.sentences?.filter(s => s.audioUrl || s.audioR2Key).length || 0;
-    const practiceBlocks = story.practiceBlocks?.filter(b => (b as any).type !== '_practice_intro').length || 0;
+    
+    // Handle practiceBlocks safely (may be null, undefined, array, or string from legacy data)
+    let practiceBlocksArr: unknown[] = [];
+    if (Array.isArray(story.practiceBlocks)) {
+      practiceBlocksArr = story.practiceBlocks;
+    } else if (typeof story.practiceBlocks === 'string') {
+      try {
+        const parsed = JSON.parse(story.practiceBlocks);
+        practiceBlocksArr = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        practiceBlocksArr = [];
+      }
+    }
+    const practiceBlocks = practiceBlocksArr.filter(b => (b as any).type !== '_practice_intro').length;
     
     return { sentences, withAudio, practiceBlocks };
   }, [story]);
@@ -320,8 +335,11 @@ export function StoryEditorV2() {
       ? [{ id: 'intro-0', type: '_practice_intro', content: practiceIntro }, ...transformedBlocks]
       : transformedBlocks;
     
+    // For updates, keep the existing story ID; for new stories, use 'new'
+    const storyId = isUpdateExisting && id !== 'new' ? id : 'new';
+    
     setStory({
-      id: 'new',
+      id: storyId,
       title: data.title,
       subtitle: data.titleEn || data.subtitle,
       author: data.author,
@@ -339,7 +357,7 @@ export function StoryEditorV2() {
       updatedAt: new Date().toISOString(),
       sentences: data.sentences.map((s, idx) => ({
         id: `temp-${idx}`,
-        storyId: 'new',
+        storyId: storyId,
         orderIndex: idx,
         chinese: s.chinese,
         pinyin: s.pinyin,
@@ -353,7 +371,9 @@ export function StoryEditorV2() {
       practiceBlocks: allBlocks,
     } as any);
     setIsDirty(true);
-    toast.success('Story imported!', `Loaded "${data.title}" with ${data.sentences.length} sentences`);
+    
+    const action = isUpdateExisting ? 'loaded for update' : 'imported';
+    toast.success(`Story ${action}!`, `Loaded "${data.title}" with ${data.sentences.length} sentences`);
   };
 
   const initializeEmpty = () => {
@@ -378,8 +398,13 @@ export function StoryEditorV2() {
 
     setSaving(true);
     try {
-      if (isNew) {
+      // Check if this is truly a new story (URL says 'new' AND story ID is still 'new')
+      // This prevents duplicate creation if first save partially failed
+      const isActuallyNew = isNew && story.id === 'new';
+      
+      if (isActuallyNew) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // Note: seriesId has FK constraint - only pass if it's a valid DB ID (not from JSON import)
         const createParams: any = {
           title: story.title,
           subtitle: story.subtitle,
@@ -390,18 +415,34 @@ export function StoryEditorV2() {
           difficulty: story.difficulty,
           estimatedMinutes: story.estimatedMinutes,
           practiceBlocks: story.practiceBlocks,
+          // seriesId/seriesOrder excluded - user assigns series after creation via UI
         };
+        logger.log('[StoryEditor] Creating story with params:', createParams);
         const newStory = await createStory(createParams);
+        logger.log('[StoryEditor] Story created:', newStory);
+
+        // Validate we got a valid story ID
+        if (!newStory || !newStory.id) {
+          logger.error('[StoryEditor] Story creation returned invalid response:', newStory);
+          throw new Error('Story creation failed - no ID returned');
+        }
+
+        // CRITICAL: Update story state with real ID immediately
+        // This prevents duplicate story creation if subsequent operations fail
+        setStory(prev => prev ? { ...prev, id: newStory.id } : null);
 
         // Save sentences if we have them
         if (story.sentences && story.sentences.length > 0) {
-          await bulkSaveSegments(newStory.id, story.sentences.map((s) => ({
+          const segments = story.sentences.map((s) => ({
             chinese: s.chinese,
-            pinyin: s.pinyin,
-            english: s.english,
+            pinyin: s.pinyin || '',
+            english: s.english || '',
             speaker: s.speaker || undefined,
-            audioR2Key: s.audioR2Key,
-          })));
+            audioR2Key: s.audioR2Key || undefined,
+          }));
+          logger.log('[StoryEditor] Saving segments for story:', newStory.id, 'count:', segments.length);
+          await bulkSaveSegments(newStory.id, segments);
+          logger.log('[StoryEditor] Segments saved successfully');
         }
 
         toast.success('Story created!', `"${story.title}" saved with ${story.sentences?.length || 0} sentences`);
@@ -421,6 +462,19 @@ export function StoryEditorV2() {
           practiceBlocks: story.practiceBlocks,
         };
         await updateStory(story.id, updateParams);
+        
+        // Also save segments (handles both new segments and updates)
+        if (story.sentences && story.sentences.length > 0) {
+          const segments = story.sentences.map((s) => ({
+            chinese: s.chinese,
+            pinyin: s.pinyin || '',
+            english: s.english || '',
+            speaker: s.speaker || undefined,
+            audioR2Key: s.audioR2Key || undefined,
+          }));
+          await bulkSaveSegments(story.id, segments);
+        }
+        
         toast.success('Story saved!');
       }
       setIsDirty(false);

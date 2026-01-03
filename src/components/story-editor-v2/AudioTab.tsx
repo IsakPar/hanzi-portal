@@ -19,7 +19,6 @@ import {
   Upload,
   Trash2,
   ExternalLink,
-  AlertTriangle,
 } from "lucide-react";
 import type { StoryWithDetails } from "@/services/storiesAPI";
 import { Button } from "@/components/ui/button";
@@ -44,6 +43,7 @@ interface AudioTabProps {
 export function AudioTab({ story, onUpdate, onSentenceAudioUpdate }: AudioTabProps) {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingUploadId, setPendingUploadId] = useState<string | null>(null);
@@ -65,9 +65,14 @@ export function AudioTab({ story, onUpdate, onSentenceAudioUpdate }: AudioTabPro
       audioRef.current.pause();
     }
 
-    const url = audioKey.startsWith('http')
+    // Build URL with cache-busting to avoid stale audio after re-upload
+    const baseUrl = audioKey.startsWith('http')
       ? audioKey
       : `https://content.polymasterlabs.com/${audioKey}`;
+    const cacheBuster = `?t=${Date.now()}`;
+    const url = baseUrl + cacheBuster;
+
+    console.log('[AudioTab] Playing:', url);
 
     const audio = new Audio(url);
     audioRef.current = audio;
@@ -89,6 +94,37 @@ export function AudioTab({ story, onUpdate, onSentenceAudioUpdate }: AudioTabPro
     setPlayingId(null);
   }, []);
 
+  // Core upload function - used by both click and drag-drop
+  const uploadAudioFile = useCallback(async (sentenceId: string, file: File) => {
+    console.log('[AudioTab] Upload started:', { sentenceId, fileName: file.name, fileSize: file.size });
+    
+    // Validate file type
+    if (!file.type.includes('audio') && !file.name.endsWith('.mp3')) {
+      toast.error('Invalid file', 'Please upload an MP3 audio file');
+      return;
+    }
+
+    setUploadingId(sentenceId);
+
+    try {
+      // Always upload immediately to R2 (use 'draft' folder for new stories)
+      const effectiveStoryId = isNewStory ? 'draft' : story.id;
+      console.log('[AudioTab] Uploading to R2:', { effectiveStoryId, sentenceId });
+      
+      const r2Key = await uploadSentenceAudio(effectiveStoryId, sentenceId, file);
+      console.log('[AudioTab] Upload success, r2Key:', r2Key);
+      
+      onSentenceAudioUpdate?.(sentenceId, r2Key);
+      if (!isNewStory) onUpdate();
+      toast.success('Audio uploaded!', 'You can listen to it now');
+    } catch (error) {
+      console.error('[AudioTab] Upload failed:', error);
+      toast.error('Upload failed', (error as Error).message);
+    } finally {
+      setUploadingId(null);
+    }
+  }, [isNewStory, story.id, onSentenceAudioUpdate, onUpdate]);
+
   const handleUploadClick = useCallback((sentenceId: string) => {
     setPendingUploadId(sentenceId);
     fileInputRef.current?.click();
@@ -98,56 +134,50 @@ export function AudioTab({ story, onUpdate, onSentenceAudioUpdate }: AudioTabPro
     const file = e.target.files?.[0];
     if (!file || !pendingUploadId) return;
 
-    // Validate file type
-    if (!file.type.includes('audio') && !file.name.endsWith('.mp3')) {
-      toast.error('Invalid file', 'Please upload an MP3 audio file');
-      return;
-    }
-
-    setUploadingId(pendingUploadId);
-
-    try {
-      if (isNewStory) {
-        // For new stories, store in-memory until story is saved
-        // Convert to base64 for temporary storage
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-          const base64 = (reader.result as string).split(',')[1];
-          // Use a temporary key format
-          const tempKey = `temp:${pendingUploadId}:${base64}`;
-          onSentenceAudioUpdate?.(pendingUploadId, tempKey);
-          toast.success('Audio attached', 'Will be saved when you save the story');
-          setUploadingId(null);
-        };
-      } else {
-        // For existing stories, upload immediately
-        const r2Key = await uploadSentenceAudio(story.id, pendingUploadId, file);
-        onSentenceAudioUpdate?.(pendingUploadId, r2Key);
-        onUpdate();
-        toast.success('Audio uploaded!');
-        setUploadingId(null);
-      }
-    } catch (error) {
-      toast.error('Upload failed', (error as Error).message);
-      setUploadingId(null);
-    }
+    await uploadAudioFile(pendingUploadId, file);
 
     // Reset file input
     e.target.value = '';
     setPendingUploadId(null);
-  }, [pendingUploadId, isNewStory, story.id, onSentenceAudioUpdate, onUpdate]);
+  }, [pendingUploadId, uploadAudioFile]);
+
+  // Drag and drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent, sentenceId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverId(sentenceId);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverId(null);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent, sentenceId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverId(null);
+
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+
+    await uploadAudioFile(sentenceId, file);
+  }, [uploadAudioFile]);
 
   const handleDelete = useCallback(async (sentenceId: string) => {
     try {
-      if (!isNewStory) {
-        await deleteSentenceAudio(story.id, sentenceId);
-      }
+      // Always delete from R2 (use 'draft' for new stories)
+      const effectiveStoryId = isNewStory ? 'draft' : story.id;
+      await deleteSentenceAudio(effectiveStoryId, sentenceId);
       onSentenceAudioUpdate?.(sentenceId, '');
       if (!isNewStory) onUpdate();
       toast.success('Audio deleted');
     } catch (error) {
-      toast.error('Delete failed', (error as Error).message);
+      // Don't fail if delete fails (file might not exist)
+      console.warn('Delete failed:', error);
+      onSentenceAudioUpdate?.(sentenceId, '');
+      toast.success('Audio cleared');
     }
   }, [story.id, isNewStory, onSentenceAudioUpdate, onUpdate]);
 
@@ -168,12 +198,12 @@ export function AudioTab({ story, onUpdate, onSentenceAudioUpdate }: AudioTabPro
 
       {/* Info banner for new stories */}
       {isNewStory && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+          <Check className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
           <div>
-            <p className="text-blue-800 font-medium">New Story - Draft Mode</p>
-            <p className="text-blue-700 text-sm">
-              Audio will be saved when you <strong>Save</strong> the story.
+            <p className="text-green-800 font-medium">Upload & Listen Immediately</p>
+            <p className="text-green-700 text-sm">
+              Audio is saved to cloud storage instantly. Listen and verify before saving the story.
             </p>
           </div>
         </div>
@@ -221,8 +251,8 @@ export function AudioTab({ story, onUpdate, onSentenceAudioUpdate }: AudioTabPro
 
         {/* Workflow tip */}
         <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-          <strong>Workflow:</strong> Copy each Chinese sentence to ElevenLabs, generate audio with v3 Alpha, 
-          download the MP3, then upload it here.
+          <strong>Workflow:</strong> Copy Chinese text to ElevenLabs → generate with v3 Alpha → 
+          <span className="font-medium text-purple-700"> drag & drop</span> the MP3 onto the sentence below.
         </div>
       </div>
 
@@ -240,18 +270,26 @@ export function AudioTab({ story, onUpdate, onSentenceAudioUpdate }: AudioTabPro
             const hasAudio = sentence.audioUrl || sentence.audioR2Key;
             const isPlaying = playingId === sentence.id;
             const isUploading = uploadingId === sentence.id;
+            const isDragOver = dragOverId === sentence.id;
             const audioKey = sentence.audioR2Key || sentence.audioUrl || '';
 
             return (
               <div
                 key={sentence.id}
+                onDragOver={(e) => handleDragOver(e, sentence.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, sentence.id)}
                 className={cn(
-                  "flex items-center gap-4 px-5 py-4",
-                  isUploading && "bg-purple-50"
+                  "flex items-center gap-4 px-5 py-4 transition-all",
+                  isUploading && "bg-purple-50",
+                  isDragOver && "bg-purple-100 ring-2 ring-purple-400 ring-inset"
                 )}
               >
                 {/* Index */}
-                <span className="w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-500 rounded-lg text-sm font-medium shrink-0">
+                <span className={cn(
+                  "w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium shrink-0 transition-colors",
+                  isDragOver ? "bg-purple-200 text-purple-700" : "bg-slate-100 text-slate-500"
+                )}>
                   {index + 1}
                 </span>
 
@@ -260,6 +298,13 @@ export function AudioTab({ story, onUpdate, onSentenceAudioUpdate }: AudioTabPro
                   <p className="text-slate-900">{sentence.chinese}</p>
                   {sentence.pinyin && (
                     <p className="text-sm text-purple-600">{sentence.pinyin}</p>
+                  )}
+                  {/* Drag hint - only show when no audio and not uploading */}
+                  {!hasAudio && !isUploading && !isDragOver && (
+                    <p className="text-xs text-slate-400 mt-1">Drop MP3 here or click to upload</p>
+                  )}
+                  {isDragOver && (
+                    <p className="text-xs text-purple-600 font-medium mt-1">Drop to upload audio!</p>
                   )}
                 </div>
 

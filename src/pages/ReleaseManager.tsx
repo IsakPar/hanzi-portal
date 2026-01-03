@@ -38,6 +38,7 @@ import {
   type VocabMode,
   type DebugVocabResponse,
 } from '@/services/releaseAPI';
+import { BookText } from 'lucide-react';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 
@@ -55,6 +56,7 @@ export function ReleaseManager() {
   
   // Selection state for lessons to ship
   const [selectedLessonIds, setSelectedLessonIds] = useState<Set<string>>(new Set());
+  const [selectedStoryIds, setSelectedStoryIds] = useState<Set<string>>(new Set());
   const [releaseNotes, setReleaseNotes] = useState('');
   const [customVersion, setCustomVersion] = useState('');
   
@@ -173,6 +175,33 @@ export function ReleaseManager() {
     });
   };
 
+  const toggleStory = (id: string) => {
+    setSelectedStoryIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllStories = (storyIds: string[]) => {
+    setSelectedStoryIds(prev => {
+      const allSelected = storyIds.every(id => prev.has(id));
+      if (allSelected) {
+        // Deselect all
+        const next = new Set(prev);
+        storyIds.forEach(id => next.delete(id));
+        return next;
+      } else {
+        // Select all
+        return new Set([...prev, ...storyIds]);
+      }
+    });
+  };
+
   const selectAll = () => {
     if (!preview) return;
     const allIds = [
@@ -244,8 +273,8 @@ export function ReleaseManager() {
   };
 
   const handleShip = async () => {
-    if (selectedLessonIds.size === 0) {
-      toast.error('No lessons selected', 'Please select at least one lesson to ship');
+    if (selectedLessonIds.size === 0 && selectedStoryIds.size === 0) {
+      toast.error('Nothing selected', 'Please select at least one lesson or story to ship');
       return;
     }
 
@@ -255,16 +284,28 @@ export function ReleaseManager() {
     try {
       const response = await shipRelease({
         hskLevel: selectedHsk,
-        lessonIds: Array.from(selectedLessonIds),
+        lessonIds: selectedLessonIds.size > 0 ? Array.from(selectedLessonIds) : undefined,
+        storyIds: selectedStoryIds.size > 0 ? Array.from(selectedStoryIds) : undefined,
         version,
         releaseNotes: releaseNotes || undefined,
         vocabMode,
         selectedVocabIds: vocabMode === 'selected' ? Array.from(selectedVocabIds) : undefined,
       });
 
+      const parts = [];
+      if (response.release.lessonsShipped > 0) {
+        parts.push(`${response.release.lessonsShipped} lessons`);
+      }
+      if (response.release.storiesShipped && response.release.storiesShipped > 0) {
+        parts.push(`${response.release.storiesShipped} stories`);
+      }
+      if (response.release.vocabShipped > 0) {
+        parts.push(`${response.release.vocabShipped} vocab`);
+      }
+      
       toast.success(
         `🚀 v${response.release.version} Shipped!`,
-        `${response.release.lessonsShipped} lessons + ${response.release.vocabShipped} vocab now live for HSK ${selectedHsk}`
+        `${parts.join(' + ')} now live for HSK ${selectedHsk}`
       );
 
       // Refresh data
@@ -416,20 +457,41 @@ export function ReleaseManager() {
                     <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
                   </Button>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-slate-700/50 rounded-xl p-4 text-center">
-                    <div className="text-3xl font-bold text-emerald-400">{status.live}</div>
-                    <div className="text-xs text-slate-400 mt-1">Live</div>
-                  </div>
-                  <div className="bg-slate-700/50 rounded-xl p-4 text-center">
-                    <div className="text-3xl font-bold text-amber-400">{status.staging}</div>
-                    <div className="text-xs text-slate-400 mt-1">Staging</div>
-                  </div>
-                  <div className="bg-slate-700/50 rounded-xl p-4 text-center">
-                    <div className="text-3xl font-bold text-slate-400">{status.draft}</div>
-                    <div className="text-xs text-slate-400 mt-1">Draft</div>
+                {/* Lessons Row */}
+                <div className="mb-3">
+                  <span className="text-xs text-slate-500 uppercase tracking-wide mb-2 block">Lessons</span>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-slate-700/50 rounded-xl p-4 text-center">
+                      <div className="text-3xl font-bold text-emerald-400">{status.live}</div>
+                      <div className="text-xs text-slate-400 mt-1">Live</div>
+                    </div>
+                    <div className="bg-slate-700/50 rounded-xl p-4 text-center">
+                      <div className="text-3xl font-bold text-amber-400">{status.staging}</div>
+                      <div className="text-xs text-slate-400 mt-1">Staging</div>
+                    </div>
+                    <div className="bg-slate-700/50 rounded-xl p-4 text-center">
+                      <div className="text-3xl font-bold text-slate-400">{status.draft}</div>
+                      <div className="text-xs text-slate-400 mt-1">Draft</div>
+                    </div>
                   </div>
                 </div>
+                
+                {/* Stories Row */}
+                {(status.storiesPublished !== undefined || status.storiesDraft !== undefined) && (
+                  <div>
+                    <span className="text-xs text-slate-500 uppercase tracking-wide mb-2 block">Stories</span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-purple-500/10 rounded-xl p-4 text-center border border-purple-500/20">
+                        <div className="text-3xl font-bold text-purple-400">{status.storiesPublished || 0}</div>
+                        <div className="text-xs text-slate-400 mt-1">Published</div>
+                      </div>
+                      <div className="bg-slate-700/50 rounded-xl p-4 text-center">
+                        <div className="text-3xl font-bold text-slate-400">{status.storiesDraft || 0}</div>
+                        <div className="text-xs text-slate-400 mt-1">Draft</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -531,6 +593,123 @@ export function ReleaseManager() {
                           Select Live Lessons for Re-Ship
                         </Button>
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ═══════════════════════════════════════════════════════════ */}
+                {/* STORIES SECTION */}
+                {/* ═══════════════════════════════════════════════════════════ */}
+                {preview?.stories && (preview.stories.totalDrafts > 0 || preview.stories.totalPublished > 0) && (
+                  <div className="bg-slate-800/30 rounded-2xl p-6 border border-slate-700/50">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-purple-500/20 rounded-lg">
+                          <BookText className="w-5 h-5 text-purple-400" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-white">Stories</h3>
+                          <p className="text-xs text-slate-500">
+                            {preview.stories.totalPublished} published, {preview.stories.totalDrafts} draft(s)
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Draft Stories - Ready to Publish */}
+                    {preview.stories.drafts.length > 0 && (
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-purple-400 font-medium">
+                            Draft Stories ({preview.stories.drafts.length})
+                          </span>
+                          <button
+                            onClick={() => toggleAllStories(preview.stories!.drafts.map(s => s.id))}
+                            className="text-xs text-purple-400 hover:text-purple-300"
+                          >
+                            {preview.stories.drafts.every(s => selectedStoryIds.has(s.id)) 
+                              ? 'Deselect All' 
+                              : 'Select All'}
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {preview.stories.drafts.map(story => (
+                            <button
+                              key={story.id}
+                              onClick={() => toggleStory(story.id)}
+                              className={cn(
+                                "w-full flex items-center gap-3 p-3 rounded-xl transition-all text-left",
+                                selectedStoryIds.has(story.id)
+                                  ? "bg-purple-500/20 border border-purple-500/50"
+                                  : "bg-slate-700/30 border border-slate-600/30 hover:border-purple-500/30"
+                              )}
+                            >
+                              <div className={cn(
+                                "w-5 h-5 rounded-md flex items-center justify-center transition-all",
+                                selectedStoryIds.has(story.id)
+                                  ? "bg-purple-500"
+                                  : "border-2 border-slate-500"
+                              )}>
+                                {selectedStoryIds.has(story.id) && (
+                                  <Check className="w-3 h-3 text-white" />
+                                )}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white font-medium">{story.title}</span>
+                                  {story.difficulty && (
+                                    <span className={cn(
+                                      "text-xs px-2 py-0.5 rounded",
+                                      story.difficulty === 'easy' ? "bg-green-500/20 text-green-400" :
+                                      story.difficulty === 'medium' ? "bg-amber-500/20 text-amber-400" :
+                                      "bg-red-500/20 text-red-400"
+                                    )}>
+                                      {story.difficulty}
+                                    </span>
+                                  )}
+                                </div>
+                                {story.subtitle && (
+                                  <span className="text-sm text-slate-400">{story.subtitle}</span>
+                                )}
+                              </div>
+                              {story.estimatedMinutes && (
+                                <span className="text-xs text-slate-500">{story.estimatedMinutes} min</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Already Published Stories */}
+                    {preview.stories.published.length > 0 && (
+                      <div>
+                        <span className="text-sm text-slate-500 font-medium block mb-2">
+                          Already Published ({preview.stories.published.length})
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {preview.stories.published.slice(0, 10).map(story => (
+                            <span 
+                              key={story.id}
+                              className="px-3 py-1.5 bg-slate-700/50 text-slate-400 rounded-lg text-sm"
+                            >
+                              {story.title}
+                            </span>
+                          ))}
+                          {preview.stories.published.length > 10 && (
+                            <span className="px-3 py-1.5 text-slate-500 text-sm">
+                              +{preview.stories.published.length - 10} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No stories case */}
+                    {preview.stories.drafts.length === 0 && preview.stories.published.length === 0 && (
+                      <p className="text-sm text-slate-500 text-center py-4">
+                        No stories for HSK {selectedHsk}
+                      </p>
                     )}
                   </div>
                 )}
@@ -801,6 +980,10 @@ export function ReleaseManager() {
                   <span className="text-sm text-slate-400">Lessons</span>
                   <span className="font-semibold text-white">{selectedLessonIds.size} selected</span>
                 </div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-slate-400">Stories</span>
+                  <span className="font-semibold text-purple-400">{selectedStoryIds.size} selected</span>
+                </div>
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm text-slate-400">Vocabulary</span>
                   <span className="font-semibold text-indigo-400">{vocabToShipCount} words</span>
@@ -857,7 +1040,7 @@ export function ReleaseManager() {
               {/* Ship Button */}
               <Button
                 onClick={handleShip}
-                disabled={shipping || selectedLessonIds.size === 0}
+                disabled={shipping || (selectedLessonIds.size === 0 && selectedStoryIds.size === 0)}
                 className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold py-3"
               >
                 {shipping ? (
@@ -873,9 +1056,9 @@ export function ReleaseManager() {
                 )}
               </Button>
 
-              {selectedLessonIds.size === 0 && (
+              {selectedLessonIds.size === 0 && selectedStoryIds.size === 0 && (
                 <p className="text-xs text-amber-400 mt-2 text-center">
-                  Select lessons to ship
+                  Select lessons or stories to ship
                 </p>
               )}
 

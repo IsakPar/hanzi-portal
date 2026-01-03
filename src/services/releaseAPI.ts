@@ -19,6 +19,15 @@ export interface LessonPreview {
   updatedAt?: string;
 }
 
+export interface StoryPreview {
+  id: string;
+  title: string;
+  subtitle?: string;
+  difficulty?: string;
+  estimatedMinutes?: number;
+  updatedAt?: string;
+}
+
 export interface VocabPreview {
   id: string;
   hanzi: string;
@@ -67,13 +76,21 @@ export interface PreviewReleaseResponse {
     totalLive?: number;
     totalLiveWithChanges?: number;
   };
+  // Stories section
+  stories?: {
+    published: StoryPreview[];
+    drafts: StoryPreview[];
+    totalPublished: number;
+    totalDrafts: number;
+  };
 }
 
 export type VocabMode = 'all' | 'lessons_only' | 'selected';
 
 export interface ShipRequest {
   hskLevel: number;
-  lessonIds: string[];
+  lessonIds?: string[];
+  storyIds?: string[];
   version: string;
   releaseNotes?: string;
   vocabMode?: VocabMode;
@@ -89,7 +106,10 @@ export interface ShipResponse {
     lessonsShipped: number;
     lessonsAdded: number;
     lessonsUpdated: number;
+    storiesShipped?: number;
+    storiesPublished?: number;
     vocabShipped: number;
+    vocabSkipped?: number;
     vocabMode: VocabMode;
   };
 }
@@ -118,6 +138,9 @@ export interface HskLevelStatus {
   latestVersion: string | null;
   lastRelease: string | null;
   hasUnshippedChanges: boolean;
+  // Story counts
+  storiesDraft?: number;
+  storiesPublished?: number;
 }
 
 export interface AllHskStatusResponse {

@@ -149,8 +149,30 @@ export async function searchStories(params?: SearchStoriesParams): Promise<Story
 }
 
 export async function createStory(params: CreateStoryParams): Promise<Story> {
+  console.log('[createStory] Creating with params:', params);
   const data = await api.post<{ story: Story }>('/v1/stories', params);
+  console.log('[createStory] Response:', data);
+  console.log('[createStory] Returned story id:', data.story?.id);
   return data.story;
+}
+
+/**
+ * Lookup a story by title + seriesId
+ * Used for import deduplication - check if a story already exists
+ * @returns { exists: boolean, story: Story | null }
+ */
+export async function lookupStoryByTitleAndSeries(
+  title: string,
+  seriesId?: string | null
+): Promise<{ exists: boolean; story: Story | null }> {
+  const params = new URLSearchParams({ title });
+  if (seriesId) {
+    params.append('seriesId', seriesId);
+  }
+  const data = await api.get<{ exists: boolean; story: Story | null }>(
+    `/v1/stories/lookup?${params.toString()}`
+  );
+  return data;
 }
 
 export async function getStory(id: string, signal?: AbortSignal): Promise<StoryWithDetails> {
@@ -188,11 +210,30 @@ export async function bulkSaveSegments(
   storyId: string, 
   segments: BulkSegment[]
 ): Promise<{ created: number; updated: number; deleted: number }> {
-  const data = await api.post<{ success: boolean; created: number; updated: number; deleted: number }>(
-    `/v1/stories/${storyId}/segments/bulk`,
-    { segments }
-  );
-  return { created: data.created, updated: data.updated, deleted: data.deleted };
+  const endpoint = `/v1/stories/${storyId}/segments/bulk`;
+  console.log('[bulkSaveSegments] === START ===');
+  console.log('[bulkSaveSegments] storyId:', storyId);
+  console.log('[bulkSaveSegments] segments count:', segments.length);
+  console.log('[bulkSaveSegments] endpoint:', endpoint);
+  console.log('[bulkSaveSegments] API_BASE_URL:', API_BASE_URL);
+  console.log('[bulkSaveSegments] Full URL will be:', `${API_BASE_URL}${endpoint}`);
+  
+  try {
+    const data = await api.post<{ success: boolean; created: number; updated: number; deleted: number }>(
+      endpoint,
+      { segments }
+    );
+    console.log('[bulkSaveSegments] SUCCESS Response:', data);
+    return { created: data.created, updated: data.updated, deleted: data.deleted };
+  } catch (error) {
+    console.error('[bulkSaveSegments] ERROR:', error);
+    console.error('[bulkSaveSegments] Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown',
+      statusCode: (error as any)?.statusCode,
+      response: (error as any)?.response,
+    });
+    throw error;
+  }
 }
 
 // Vocabulary

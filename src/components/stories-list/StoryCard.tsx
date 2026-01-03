@@ -1,10 +1,11 @@
-import { Clock, Star, BookOpen } from 'lucide-react';
+import { Clock, Star, BookOpen, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Story } from '@/services/storiesAPI';
 
 interface StoryCardProps {
   story: Story;
   onClick: () => void;
+  onDelete?: (e: React.MouseEvent) => void;
 }
 
 const difficultyColors = {
@@ -13,7 +14,7 @@ const difficultyColors = {
   hard: "from-red-500 to-rose-500",
 };
 
-export function StoryCard({ story, onClick }: StoryCardProps) {
+export function StoryCard({ story, onClick, onDelete }: StoryCardProps) {
   const practiceCount = story.practiceBlocks?.length || 0;
 
   return (
@@ -21,12 +22,31 @@ export function StoryCard({ story, onClick }: StoryCardProps) {
       onClick={onClick}
       className="group relative overflow-hidden bg-white rounded-2xl border border-gray-200 hover:border-purple-300 shadow-sm hover:shadow-xl transition-all cursor-pointer hover:scale-[1.02]"
     >
-      {/* Gradient Header */}
+      {/* Delete Button - Top Right */}
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          className="absolute top-3 right-3 z-20 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+          title="Delete story"
+        >
+          <Trash2 size={16} />
+        </button>
+      )}
+
+      {/* Gradient Header with optional Cover Image */}
       <div className={cn(
         "h-32 bg-gradient-to-br p-6 relative overflow-hidden",
         difficultyColors[story.difficulty]
       )}>
-        <div className="absolute inset-0 bg-black/10" />
+        {/* Cover image background */}
+        {story.coverImageR2Key && (
+          <img
+            src={`https://content.hanzimaster.com/${story.coverImageR2Key}`}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        )}
+        <div className="absolute inset-0 bg-black/30" />
         <div className="relative z-10">
           <div className="flex items-center justify-between mb-3">
             <span className="px-3 py-1 rounded-full text-xs font-semibold border backdrop-blur-sm bg-white/20 text-white">
@@ -43,7 +63,7 @@ export function StoryCard({ story, onClick }: StoryCardProps) {
               </span>
             )}
           </div>
-          <h3 className="text-xl font-bold text-white line-clamp-2">{story.title}</h3>
+          <h3 className="text-xl font-bold text-white line-clamp-2 drop-shadow-lg">{story.title}</h3>
         </div>
       </div>
 

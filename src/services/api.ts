@@ -125,12 +125,27 @@ async function apiFetch<T>(
   }
 
   const url = `${API_BASE_URL}${endpoint}`;
+  
+  // Debug logging for 404 investigation
+  console.log('[apiFetch] Making request:', {
+    url,
+    method: options.method || 'GET',
+    hasToken: !!token,
+    headers: Object.keys(headers),
+  });
 
   try {
     const response = await fetch(url, {
       ...options,
       headers,
       signal: options.signal,
+    });
+    
+    console.log('[apiFetch] Response received:', {
+      url,
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers.get('content-type'),
     });
 
     // Handle 401 - try refresh once
@@ -145,9 +160,18 @@ async function apiFetch<T>(
 
     // Handle other errors
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const responseText = await response.text();
+      console.log('[apiFetch] Error response body:', responseText);
+      
+      let errorData = {};
+      try {
+        errorData = JSON.parse(responseText);
+      } catch {
+        console.log('[apiFetch] Response is not JSON');
+      }
+      
       throw new APIError(
-        errorData.error || errorData.message || `Request failed with status ${response.status}`,
+        (errorData as any).error || (errorData as any).message || `Request failed with status ${response.status}`,
         response.status,
         errorData
       );

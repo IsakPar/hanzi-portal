@@ -7,9 +7,10 @@
  */
 
 import { useState, useCallback } from 'react';
-import { X, Upload, Check, AlertCircle, FileJson } from 'lucide-react';
+import { X, Upload, Check, AlertCircle, FileJson, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { lookupStoryByTitleAndSeries, type Story } from '@/services/storiesAPI';
 
 // Story import data structure
 export interface StoryImportData {
@@ -48,6 +49,7 @@ interface StoryImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImport: (data: StoryImportData) => void;
+  onUpdateExisting?: (storyId: string, data: StoryImportData) => void;
 }
 
 interface ValidationResult {
@@ -162,14 +164,17 @@ const EXAMPLE_JSON = `{
   "practiceBlocks": []
 }`;
 
-export function StoryImportModal({ isOpen, onClose, onImport }: StoryImportModalProps) {
+export function StoryImportModal({ isOpen, onClose, onImport, onUpdateExisting }: StoryImportModalProps) {
   const [jsonInput, setJsonInput] = useState('');
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [existingStory, setExistingStory] = useState<Story | null>(null);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
 
-  const handleValidate = useCallback(() => {
+  const handleValidate = useCallback(async () => {
     setParseError(null);
     setValidation(null);
+    setExistingStory(null);
 
     if (!jsonInput.trim()) {
       setParseError('Please paste JSON first');
@@ -180,14 +185,29 @@ export function StoryImportModal({ isOpen, onClose, onImport }: StoryImportModal
       const parsed = JSON.parse(jsonInput);
       const result = validateStoryJson(parsed);
       setValidation(result);
+      
+      // If valid, check for existing story with same title + seriesId
+      if (result.isValid) {
+        setCheckingDuplicate(true);
+        try {
+          const title = parsed.title as string;
+          const seriesId = parsed.seriesId as string | undefined;
+          const lookup = await lookupStoryByTitleAndSeries(title, seriesId);
+          if (lookup.exists && lookup.story) {
+            setExistingStory(lookup.story);
+          }
+        } catch {
+          // Ignore lookup errors - just proceed without duplicate check
+        } finally {
+          setCheckingDuplicate(false);
+        }
+      }
     } catch (err) {
       setParseError(`Invalid JSON: ${err instanceof Error ? err.message : 'Parse error'}`);
     }
   }, [jsonInput]);
 
-  const handleImport = useCallback(() => {
-    if (!validation?.isValid) return;
-
+  const buildImportData = useCallback((): StoryImportData | null => {
     try {
       const parsed = JSON.parse(jsonInput) as Record<string, unknown>;
       
@@ -198,7 +218,7 @@ export function StoryImportModal({ isOpen, onClose, onImport }: StoryImportModal
       const hasDialogue = contentArray.some(s => s.speaker);
       const storyType = (parsed.storyType as string) || (hasDialogue ? 'dialogue' : 'text');
       
-      const importData: StoryImportData = {
+      return {
         title: parsed.title as string,
         titleEn: parsed.titleEn as string | undefined,
         subtitle: parsed.subtitle as string | undefined,
@@ -222,15 +242,42 @@ export function StoryImportModal({ isOpen, onClose, onImport }: StoryImportModal
         seriesId: parsed.seriesId as string | undefined,
         seriesOrder: parsed.seriesOrder as number | undefined,
       };
-
-      onImport(importData);
-      setJsonInput('');
-      setValidation(null);
-      onClose();
-    } catch (err) {
-      setParseError('Failed to process JSON');
+    } catch {
+      return null;
     }
-  }, [jsonInput, validation, onImport, onClose]);
+  }, [jsonInput]);
+
+  const handleImport = useCallback(() => {
+    if (!validation?.isValid) return;
+
+    const importData = buildImportData();
+    if (!importData) {
+      setParseError('Failed to process JSON');
+      return;
+    }
+
+    onImport(importData);
+    setJsonInput('');
+    setValidation(null);
+    setExistingStory(null);
+    onClose();
+  }, [validation, buildImportData, onImport, onClose]);
+  
+  const handleUpdateExisting = useCallback(() => {
+    if (!validation?.isValid || !existingStory || !onUpdateExisting) return;
+
+    const importData = buildImportData();
+    if (!importData) {
+      setParseError('Failed to process JSON');
+      return;
+    }
+
+    onUpdateExisting(existingStory.id, importData);
+    setJsonInput('');
+    setValidation(null);
+    setExistingStory(null);
+    onClose();
+  }, [validation, existingStory, buildImportData, onUpdateExisting, onClose]);
 
   const handlePasteExample = () => {
     setJsonInput(EXAMPLE_JSON);
@@ -372,6 +419,38 @@ export function StoryImportModal({ isOpen, onClose, onImport }: StoryImportModal
             </div>
           )}
 
+          {/* Duplicate Detection */}
+          {checkingDuplicate && (
+            <div className="flex items-center gap-3 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+              <RefreshCw size={20} className="text-gray-500 animate-spin" />
+              <p className="text-sm text-gray-600">Checking for existing story...</p>
+            </div>
+          )}
+          
+          {existingStory && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <div className="flex items-start gap-3">
+                <AlertCircle size={20} className="text-amber-500 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-semibold text-amber-800">Story Already Exists!</p>
+                  <p className="text-sm text-amber-700 mt-1">
+                    A story with title <strong>"{existingStory.title}"</strong>
+                    {existingStory.seriesId && <> in series <code className="bg-amber-100 px-1.5 py-0.5 rounded text-xs font-mono">{existingStory.seriesId}</code></>} already exists:
+                  </p>
+                  <div className="mt-2 p-3 bg-white rounded-lg border border-amber-200">
+                    <p className="font-medium text-gray-900">{existingStory.title}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      HSK {existingStory.hskLevel} • {existingStory.isPublished ? '🟢 Published' : '⚪ Draft'} • Updated {new Date(existingStory.updatedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <p className="text-sm text-amber-700 mt-3">
+                    Would you like to <strong>update</strong> the existing story or <strong>create a new copy</strong>?
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Info Banner */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-sm text-blue-800">
@@ -390,18 +469,46 @@ export function StoryImportModal({ isOpen, onClose, onImport }: StoryImportModal
             <Button
               variant="outline"
               onClick={handleValidate}
-              disabled={!jsonInput.trim()}
+              disabled={!jsonInput.trim() || checkingDuplicate}
             >
-              Validate
+              {checkingDuplicate ? (
+                <>
+                  <RefreshCw size={16} className="mr-2 animate-spin" />
+                  Checking...
+                </>
+              ) : (
+                'Validate'
+              )}
             </Button>
-            <Button 
-              onClick={handleImport}
-              disabled={!validation?.isValid}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-            >
-              <Upload size={16} className="mr-2" />
-              Open in Editor
-            </Button>
+            
+            {existingStory && onUpdateExisting ? (
+              <>
+                <Button 
+                  variant="outline"
+                  onClick={handleImport}
+                  disabled={!validation?.isValid}
+                >
+                  Create New Copy
+                </Button>
+                <Button 
+                  onClick={handleUpdateExisting}
+                  disabled={!validation?.isValid}
+                  className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
+                >
+                  <RefreshCw size={16} className="mr-2" />
+                  Update Existing
+                </Button>
+              </>
+            ) : (
+              <Button 
+                onClick={handleImport}
+                disabled={!validation?.isValid}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+              >
+                <Upload size={16} className="mr-2" />
+                Open in Editor
+              </Button>
+            )}
           </div>
         </div>
       </div>

@@ -20,7 +20,10 @@ import {
   ChevronRight,
   Sparkles,
   AlertCircle,
+  ImagePlus,
+  Loader2,
 } from "lucide-react";
+import { uploadCover } from "@/services/storiesAPI";
 import type { StoryWithDetails, StorySentence } from "@/services/storiesAPI";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +57,9 @@ export function StoryTab({ story, onChange, onSentencesChange }: StoryTabProps) 
   // Quick input state
   const [quickText, setQuickText] = useState('');
   const [estimatedCount, setEstimatedCount] = useState(0);
+  
+  // Cover upload state
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   // ─────────────────────────────────────────────────────────
   // HANDLERS
@@ -61,6 +67,44 @@ export function StoryTab({ story, onChange, onSentencesChange }: StoryTabProps) 
 
   const handleMetadataChange = (field: keyof StoryWithDetails, value: unknown) => {
     onChange({ [field]: value });
+  };
+
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image too large (max 5MB)');
+      return;
+    }
+
+    // For new stories, we can't upload yet - store locally for preview
+    if (story.id === 'new') {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        onChange({ coverImageR2Key: ev.target?.result as string }); // Store data URL temporarily
+      };
+      reader.readAsDataURL(file);
+      toast.success('Cover preview set - will upload on save');
+      return;
+    }
+
+    // Upload to backend
+    setUploadingCover(true);
+    try {
+      const r2Key = await uploadCover(story.id, file);
+      onChange({ coverImageR2Key: r2Key });
+      toast.success('Cover image uploaded!');
+    } catch (err) {
+      toast.error('Failed to upload cover');
+    } finally {
+      setUploadingCover(false);
+    }
   };
 
   const handleQuickTextChange = (text: string) => {
@@ -285,6 +329,59 @@ export function StoryTab({ story, onChange, onSentencesChange }: StoryTabProps) 
                 placeholder="A brief description of the story..."
                 rows={2}
               />
+            </div>
+
+            {/* Cover Image */}
+            <div className="space-y-1.5">
+              <Label>Cover Image</Label>
+              <div className="flex items-start gap-4">
+                {/* Preview */}
+                <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                  {story.coverImageR2Key ? (
+                    <img
+                      src={story.coverImageR2Key.startsWith('data:') 
+                        ? story.coverImageR2Key 
+                        : `https://content.hanzimaster.com/${story.coverImageR2Key}`}
+                      alt="Cover"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <ImagePlus size={24} className="text-slate-300" />
+                  )}
+                </div>
+                
+                {/* Upload button */}
+                <div className="flex-1 space-y-2">
+                  <label className="relative cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleCoverUpload}
+                      className="sr-only"
+                      disabled={uploadingCover}
+                    />
+                    <div className={cn(
+                      "px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors inline-flex items-center gap-2 text-sm font-medium",
+                      uploadingCover && "opacity-50 cursor-not-allowed"
+                    )}>
+                      {uploadingCover ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <ImagePlus size={16} />
+                          {story.coverImageR2Key ? 'Change Cover' : 'Upload Cover'}
+                        </>
+                      )}
+                    </div>
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    PNG, JPG, or WebP. Max 5MB. Recommended: 400×400px
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -46,6 +46,7 @@ const ControlCenter = lazy(() => import("./pages/ControlCenter"));
 const RateLimits = lazy(() => import("./pages/RateLimits"));
 const SubscriptionsPage = lazy(() => import("./pages/SubscriptionsPage"));
 const PerformancePage = lazy(() => import("./pages/PerformancePage"));
+const ShowcaseEditor = lazy(() => import("./pages/ShowcaseEditor").then(m => ({ default: m.ShowcaseEditor })));
 
 // AI Studio pages (lazy loaded - dedicated workspace)
 const AIStudioGenerate = lazy(() => import("./pages/ai-studio/GeneratePage"));
@@ -130,6 +131,7 @@ function AppContent() {
           <Route path="lesson-cache" element={<Suspense fallback={<PageLoader />}><LessonCacheManager /></Suspense>} errorElement={<ErrorBoundary />} />
           <Route path="users" element={<AdminGuard><Suspense fallback={<PageLoader />}><UserManagement /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
           <Route path="control-center" element={<AdminGuard><Suspense fallback={<PageLoader />}><ControlCenter /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
+          <Route path="showcase" element={<AdminGuard><Suspense fallback={<PageLoader />}><ShowcaseEditor /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
           <Route path="rate-limits" element={<AdminGuard><Suspense fallback={<PageLoader />}><RateLimits /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
           <Route path="subscriptions" element={<AdminGuard><Suspense fallback={<PageLoader />}><SubscriptionsPage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
           <Route path="performance" element={<AdminGuard><Suspense fallback={<PageLoader />}><PerformancePage /></Suspense></AdminGuard>} errorElement={<ErrorBoundary />} />
