@@ -50,7 +50,10 @@ interface StoryTabProps {
 // ═══════════════════════════════════════════════════════════
 
 export function StoryTab({ story, onChange, onSentencesChange }: StoryTabProps) {
-  const [expandedSection, setExpandedSection] = useState<'info' | 'sentences' | null>('sentences');
+  // Open "Story Details" by default for new stories, otherwise open sentences
+  const [expandedSection, setExpandedSection] = useState<'info' | 'sentences' | null>(
+    story.id === 'new' ? 'info' : 'sentences'
+  );
   const [editingSentenceId, setEditingSentenceId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ chinese: '', pinyin: '', english: '', speaker: '' });
   
@@ -206,11 +209,18 @@ export function StoryTab({ story, onChange, onSentencesChange }: StoryTabProps) 
             ) : (
               <ChevronRight className="w-5 h-5 text-slate-400" />
             )}
-            <h2 className="font-semibold text-slate-900">Story Details</h2>
+            <h2 className="font-semibold text-slate-900">Story Details & Cover</h2>
           </div>
-          <span className="text-sm text-slate-500">
-            {story.title || 'Untitled'} · HSK {story.hskLevel}
-          </span>
+          <div className="flex items-center gap-3">
+            {story.coverImageR2Key && (
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                Cover ✓
+              </span>
+            )}
+            <span className="text-sm text-slate-500">
+              {story.title || 'Untitled'} · HSK {story.hskLevel}
+            </span>
+          </div>
         </button>
 
         {expandedSection === 'info' && (
