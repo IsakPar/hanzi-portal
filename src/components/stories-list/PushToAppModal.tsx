@@ -60,57 +60,57 @@ export function PushToAppModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
       />
       
       {/* Modal */}
-      <div className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-lg bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-zinc-800">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gradient-to-r from-violet-50 to-fuchsia-50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-violet-200">
               <Rocket className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Push to App</h2>
-              <p className="text-sm text-zinc-400">Review changes before pushing</p>
+              <h2 className="text-lg font-semibold text-gray-900">Push to App</h2>
+              <p className="text-sm text-gray-500">Review changes before syncing</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-600"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+        <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto bg-white">
           {pushComplete ? (
             <div className="flex flex-col items-center py-8">
-              <div className="w-16 h-16 rounded-full bg-emerald-600/20 flex items-center justify-center mb-4">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+              <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mb-4">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
               </div>
-              <h3 className="text-lg font-semibold mb-1">Push Complete!</h3>
-              <p className="text-zinc-400 text-sm">Changes are now live in the app</p>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Push Complete!</h3>
+              <p className="text-gray-500 text-sm">Changes are now live in the app</p>
             </div>
           ) : (
             <>
               {/* Added */}
               {changes.added.length > 0 && (
-                <div>
+                <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="w-6 h-6 rounded-full bg-emerald-600/20 flex items-center justify-center">
-                      <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                    <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                      <Plus className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <span className="font-medium text-emerald-400">
-                      Adding ({changes.added.length})
+                    <span className="font-semibold text-emerald-700">
+                      Adding {changes.added.length} {changes.added.length === 1 ? 'story' : 'stories'}
                     </span>
                   </div>
                   <div className="space-y-2 pl-8">
                     {changes.added.map(id => (
-                      <div key={id} className="flex items-center gap-2 text-sm text-zinc-300">
+                      <div key={id} className="flex items-center gap-2 text-sm text-emerald-800">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                         {getStoryTitle(id)}
                       </div>
@@ -121,18 +121,18 @@ export function PushToAppModal({
 
               {/* Reordered */}
               {changes.reordered.length > 0 && (
-                <div>
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="w-6 h-6 rounded-full bg-blue-600/20 flex items-center justify-center">
-                      <RefreshCw className="w-3.5 h-3.5 text-blue-400" />
+                    <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
+                      <RefreshCw className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <span className="font-medium text-blue-400">
-                      Reordering ({changes.reordered.length})
+                    <span className="font-semibold text-blue-700">
+                      Reordering {changes.reordered.length} {changes.reordered.length === 1 ? 'category' : 'categories'}
                     </span>
                   </div>
                   <div className="space-y-2 pl-8">
                     {changes.reordered.map(id => (
-                      <div key={id} className="flex items-center gap-2 text-sm text-zinc-300">
+                      <div key={id} className="flex items-center gap-2 text-sm text-blue-800">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                         {getStoryTitle(id)}
                       </div>
@@ -143,18 +143,18 @@ export function PushToAppModal({
 
               {/* Removed */}
               {changes.removed.length > 0 && (
-                <div>
+                <div className="bg-red-50 rounded-xl p-4 border border-red-100">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="w-6 h-6 rounded-full bg-red-600/20 flex items-center justify-center">
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center">
+                      <Trash2 className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <span className="font-medium text-red-400">
-                      Removing ({changes.removed.length})
+                    <span className="font-semibold text-red-700">
+                      Removing {changes.removed.length} {changes.removed.length === 1 ? 'story' : 'stories'}
                     </span>
                   </div>
                   <div className="space-y-2 pl-8">
                     {changes.removed.map(id => (
-                      <div key={id} className="flex items-center gap-2 text-sm text-zinc-300">
+                      <div key={id} className="flex items-center gap-2 text-sm text-red-800">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                         {getStoryTitle(id)}
                       </div>
@@ -165,16 +165,20 @@ export function PushToAppModal({
 
               {/* No changes */}
               {totalChanges === 0 && (
-                <div className="text-center py-8 text-zinc-500">
-                  <p>No pending changes to push</p>
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                    <CheckCircle2 className="w-6 h-6 text-gray-400" />
+                  </div>
+                  <p className="text-gray-500 font-medium">Everything is up to date!</p>
+                  <p className="text-gray-400 text-sm mt-1">No pending changes to push</p>
                 </div>
               )}
 
               {/* Error */}
               {error && (
-                <div className="flex items-center gap-2 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-400 text-sm">
-                  <AlertCircle className="w-4 h-4" />
-                  {error}
+                <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span>{error}</span>
                 </div>
               )}
             </>
@@ -183,24 +187,24 @@ export function PushToAppModal({
 
         {/* Footer */}
         {!pushComplete && (
-          <div className="flex items-center justify-between p-6 border-t border-zinc-800 bg-zinc-900/50">
-            <div className="text-sm text-zinc-400">
+          <div className="flex items-center justify-between p-6 border-t border-gray-100 bg-gray-50">
+            <div className="text-sm text-gray-500 font-medium">
               {totalChanges} change{totalChanges !== 1 ? 's' : ''} pending
             </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={onClose}
-                className="px-4 py-2 hover:bg-zinc-800 rounded-lg text-sm transition-colors"
+                className="px-4 py-2.5 hover:bg-gray-200 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handlePush}
                 disabled={pushing || totalChanges === 0}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-lg ${
                   pushing || totalChanges === 0
-                    ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500'
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+                    : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white shadow-violet-200'
                 }`}
               >
                 {pushing ? (
@@ -222,4 +226,3 @@ export function PushToAppModal({
     </div>
   );
 }
-
